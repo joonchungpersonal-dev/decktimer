@@ -1,0 +1,3748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeckTimer</title>
+<style>
+/* ── Variables ── */
+:root {
+  --bg: #1e1e1e;
+  --bg-light: #252526;
+  --bg-card: #2d2d2d;
+  --text: #ccc;
+  --text-dim: #666;
+  --breathing: #00d4aa;
+  --workout: #ff6b35;
+  --stretching: #a855f7;
+  --radius: 10px;
+  --tile-size: 120px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Top Bar ── */
+nav {
+  display: flex;
+  align-items: center;
+  padding: 0 16px 0 80px; /* left padding for macOS traffic lights */
+  height: 36px;
+  background: #333;
+  border-bottom: 1px solid #444;
+  -webkit-app-region: drag; /* allow window dragging from nav */
+}
+nav button, nav .app-title { -webkit-app-region: no-drag; }
+nav button {
+  padding: 4px 14px;
+  border: none;
+  background: transparent;
+  color: #888;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all .12s;
+}
+nav button:hover { background: #3c3c3c; color: #bbb; }
+nav button.active { background: #0078d4; color: #fff; }
+
+.app-title {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  letter-spacing: 1px;
+}
+
+/* ── Views ── */
+.view { display: none; }
+.view.active { display: flex; align-items: center; justify-content: center; height: calc(100vh - 38px); padding: 16px; }
+
+/* ── Key Grid — fills viewport like Stream Deck ── */
+.deck-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 6px;
+  padding: 8px;
+  background: #1a1a1a;
+  border-radius: 10px;
+  width: min(95vw, 960px);
+}
+
+/* ── Key Button ── */
+.tile {
+  border-radius: 10px;
+  background: #111;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all .1s;
+  border: none;
+  position: relative;
+  user-select: none;
+  padding: 12px;
+}
+.tile:hover {
+  filter: brightness(1.2);
+  border-color: #555;
+  transform: translateY(-1px);
+}
+.tile:active {
+  transform: scale(0.95);
+  filter: brightness(1.4);
+}
+.tile .icon { width: 40px; height: 40px; }
+.tile .icon svg { width: 100%; height: 100%; }
+.tile .label {
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  color: #fff;
+}
+.tile .duration { display: none; }
+
+.tile[data-category="breathing"] { --cat-color: var(--breathing); }
+.tile[data-category="workout"]   { --cat-color: var(--workout); }
+.tile[data-category="stretching"]{ --cat-color: var(--stretching); }
+
+.tile.add-tile {
+  background: #111;
+  --cat-color: #555;
+}
+.tile .cat-dot { display: none; }
+
+/* ── Playlist Builder ── */
+.playlist-section h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+.available-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 32px;
+}
+.mini-tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  cursor: grab;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: all .15s;
+  user-select: none;
+}
+.mini-tile:hover { border-color: var(--cat-color); }
+.mini-tile[data-category="breathing"] { --cat-color: var(--breathing); }
+.mini-tile[data-category="workout"]   { --cat-color: var(--workout); }
+.mini-tile[data-category="stretching"]{ --cat-color: var(--stretching); }
+.mini-tile .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cat-color); flex-shrink: 0; }
+
+.playlist-lane {
+  min-height: 80px;
+  border: 2px dashed #ffffff20;
+  border-radius: var(--radius);
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  transition: border-color .2s;
+}
+.playlist-lane.drag-over { border-color: var(--breathing); background: #ffffff05; }
+.playlist-lane .empty-msg {
+  color: var(--text-dim);
+  font-size: 13px;
+  width: 100%;
+  text-align: center;
+  pointer-events: none;
+}
+
+.playlist-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  font-size: 12px;
+  cursor: grab;
+  border-left: 3px solid var(--cat-color);
+  position: relative;
+}
+.playlist-item[data-category="breathing"] { --cat-color: var(--breathing); }
+.playlist-item[data-category="workout"]   { --cat-color: var(--workout); }
+.playlist-item[data-category="stretching"]{ --cat-color: var(--stretching); }
+.playlist-item .remove-btn {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: #ff4466;
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.playlist-item:hover .remove-btn { opacity: 1; }
+
+.playlist-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.playlist-controls button {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-primary { background: #00d4aa; color: #000; border-radius: 4px; }
+.btn-primary:hover { filter: brightness(1.15); }
+.btn-secondary { background: #1a1a1a; color: #999; border: 1px solid #333; border-radius: 4px; }
+.btn-secondary:hover { background: #222; color: #ccc; }
+.btn-danger { background: #1a0a0a; color: #ff4466; border: 1px solid #331111; border-radius: 4px; }
+.btn-danger:hover { background: #220e0e; }
+
+.playlist-meta {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.save-input {
+  padding: 8px 12px;
+  border: 1px solid #ffffff20;
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+  width: 160px;
+}
+.saved-routines {
+  margin-top: 24px;
+}
+.saved-routines h3 {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.routine-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.routine-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid #ffffff10;
+  transition: all .15s;
+}
+.routine-chip:hover { border-color: var(--breathing); }
+.routine-chip .del {
+  color: #ff4466;
+  font-size: 14px;
+  cursor: pointer;
+  margin-left: 4px;
+}
+
+/* ── Timer View ── */
+.timer-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-top: 16px;
+}
+.timer-canvas-wrap {
+  position: relative;
+  width: 280px;
+  height: 280px;
+}
+.timer-canvas-wrap canvas {
+  width: 100%;
+  height: 100%;
+}
+.timer-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.timer-digits {
+  font-size: 56px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 2px;
+}
+.timer-phase {
+  font-size: 20px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  margin-top: 4px;
+}
+.timer-set-info {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.timer-breathing-cue {
+  font-size: 14px;
+  margin-top: 4px;
+  font-weight: 500;
+  opacity: .8;
+}
+
+/* ── Retro Game Canvas ── */
+.retro-wrap {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 3px solid #0a0a0a;
+  background: #000;
+  box-shadow: 0 0 30px rgba(0,0,0,0.5);
+}
+.retro-wrap canvas {
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+.retro-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.retro-overlay .ro-time {
+  font-family: monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: #f8f8f0;
+  text-shadow: 0 0 6px #000;
+}
+.retro-overlay .ro-phase {
+  font-family: monospace;
+  font-size: 22px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  text-shadow: 0 0 8px #000, 0 0 16px #000;
+}
+.retro-overlay .ro-cycle {
+  font-family: monospace;
+  font-size: 11px;
+  color: #aaa;
+  text-shadow: 0 0 4px #000;
+}
+
+.timer-next {
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: center;
+}
+.timer-next span { color: var(--text); font-weight: 600; }
+
+.timer-controls {
+  display: flex;
+  gap: 12px;
+}
+.timer-controls button {
+  padding: 12px 28px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-pause { background: #1a1a1a; color: #fbbf24; border: 1px solid #333; }
+.btn-pause:hover { background: #222; }
+.btn-skip { background: #1a1a1a; color: #999; border: 1px solid #333; }
+.btn-skip:hover { background: #222; color: #ccc; }
+.btn-stop { background: #1a0a0a; color: #ff4466; border: 1px solid #331111; }
+.btn-stop:hover { background: #220e0e; }
+.btn-end-set { background: var(--workout); color: #000; font-size: 18px; padding: 16px 40px; }
+.btn-end-set:hover { filter: brightness(1.15); }
+.btn-back { background: #ffffff10; color: var(--text); }
+.btn-back:hover { background: #ffffff20; }
+.btn-next { background: #ffffff10; color: var(--text); }
+.btn-next:hover { background: #ffffff20; }
+.btn-fullscreen { background: #111; color: var(--text-dim); font-size: 12px; padding: 8px 16px; border: 1px solid #333; border-radius: 6px; cursor: pointer; }
+.btn-fullscreen:hover { background: #222; color: var(--text); }
+
+.timer-activity-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+
+/* ── Custom Modal ── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: #00000080;
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: #111111;
+  border-radius: 8px;
+  border: 1px solid #222222;
+  padding: 24px;
+  width: 360px;
+  max-width: 90vw;
+}
+.modal h3 { margin-bottom: 16px; font-size: 16px; }
+.modal label { display: block; font-size: 12px; color: var(--text-dim); margin-top: 10px; margin-bottom: 4px; }
+.modal input, .modal select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  background: #000000;
+  color: #ffffff;
+  font-size: 13px;
+}
+.modal .modal-btns { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+
+/* ── Session History ── */
+.history-section { margin-top: 32px; }
+.history-section h3 {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.history-entry {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+.history-entry .h-time { color: var(--text-dim); min-width: 60px; }
+.history-entry .h-name { font-weight: 600; }
+.history-entry .h-dur { color: var(--text-dim); margin-left: auto; }
+
+/* ── Glow Text ── */
+.glow-breathing { color: var(--breathing); text-shadow: 0 0 12px var(--breathing); }
+.glow-workout   { color: var(--workout);   text-shadow: 0 0 12px var(--workout); }
+.glow-stretching{ color: var(--stretching); text-shadow: 0 0 12px var(--stretching); }
+
+/* ── Crossfade overlay ── */
+#crossfade {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 50;
+  transition: opacity 0.8s ease-in-out;
+}
+#crossfade.fade-in { opacity: 1; }
+</style>
+</head>
+<body>
+
+<nav>
+  <button class="active" data-view="deck">Breathwork</button>
+  <span class="app-title">DECKTIMER</span>
+</nav>
+
+<div id="crossfade"></div>
+<div id="view-deck" class="view active"></div>
+<div id="view-workout" class="view"></div>
+<div id="view-playlist" class="view"></div>
+<div id="view-timer" class="view"></div>
+
+<!-- Custom Protocol Modal -->
+<div class="modal-overlay" id="custom-modal">
+  <div class="modal">
+    <h3>Custom Timer</h3>
+    <label>Name</label>
+    <input id="cm-name" value="Custom Timer">
+    <label>Preset</label>
+    <select id="cm-preset" style="margin-bottom:8px">
+      <option value="">— blank —</option>
+      <option value="seluyanov">Seluyanov TUT (40s work, 5min rest, 3 sets)</option>
+      <option value="emom">EMOM (60s rounds, 10 rounds)</option>
+      <option value="stretch">Timed Stretch (30s hold)</option>
+    </select>
+    <label>Category</label>
+    <select id="cm-category">
+      <option value="breathing">Breathing</option>
+      <option value="workout">Workout</option>
+      <option value="stretching">Stretching</option>
+    </select>
+    <label>Phase 1 Name</label>
+    <input id="cm-p1-name" value="WORK">
+    <label>Phase 1 Duration (seconds)</label>
+    <input id="cm-p1-dur" type="number" value="30">
+    <label>Phase 2 Name (leave blank for single-phase)</label>
+    <input id="cm-p2-name" value="">
+    <label>Phase 2 Duration (seconds)</label>
+    <input id="cm-p2-dur" type="number" value="0">
+    <label>Cycles</label>
+    <input id="cm-cycles" type="number" value="1">
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="document.getElementById('custom-modal').classList.remove('active')">Cancel</button>
+      <button class="btn-primary" id="cm-create">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+;(function() {
+'use strict';
+
+/* ═══════════════════════════════════════════
+   1. PROTOCOLS — with breathFill metadata
+   ═══════════════════════════════════════════ */
+const PROTOCOLS = {
+  box: {
+    id: 'box', name: 'Box Breathing', category: 'breathing',
+    animation: 'goat',
+    phases: [
+      { name: 'INHALE', duration: 4, fillStart: 0, fillEnd: 1, slope: 1 },
+      { name: 'HOLD', duration: 4, fillStart: 1, fillEnd: 1, slope: 0 },
+      { name: 'EXHALE', duration: 4, fillStart: 1, fillEnd: 0, slope: -1 },
+      { name: 'HOLD', duration: 4, fillStart: 0, fillEnd: 0, slope: 0 }
+    ],
+    cycleDuration: 16, defaultCycles: Infinity
+  },
+  coherence: {
+    id: 'coherence', name: 'Coherence', category: 'breathing',
+    animation: 'goat_night',
+    phases: [
+      { name: 'INHALE', duration: 5.5, fillStart: 0, fillEnd: 1, slope: 1 },
+      { name: 'EXHALE', duration: 5.5, fillStart: 1, fillEnd: 0, slope: -1 }
+    ],
+    cycleDuration: 11, defaultCycles: Infinity
+  },
+  b478: {
+    id: 'b478', name: '4-7-8', category: 'breathing',
+    animation: 'goat',
+    phases: [
+      { name: 'INHALE', duration: 4, fillStart: 0, fillEnd: 1, slope: 1 },
+      { name: 'HOLD', duration: 7, fillStart: 1, fillEnd: 1, slope: 0 },
+      { name: 'EXHALE', duration: 8, fillStart: 1, fillEnd: 0, slope: -1 }
+    ],
+    cycleDuration: 19, defaultCycles: Infinity
+  },
+  physio_sigh: {
+    id: 'physio_sigh', name: 'Physiological Sigh', category: 'breathing',
+    animation: 'dog',
+    phases: [
+      { name: 'INHALE', duration: 1.5, fillStart: 0, fillEnd: 0.75, slope: 1 },
+      { name: 'SIP!', duration: 0.6, fillStart: 0.75, fillEnd: 1, slope: 1 },
+      { name: 'EXHALE', duration: 8, fillStart: 1, fillEnd: 0, slope: -1 }
+    ],
+    cycleDuration: 10.1, defaultCycles: Infinity
+  }
+};
+
+function createActivity(protocolId, overrides) {
+  const proto = PROTOCOLS[protocolId];
+  if (!proto) return null;
+  return {
+    ...proto,
+    cycles: overrides?.cycles ?? proto.defaultCycles,
+    ...(overrides || {})
+  };
+}
+
+function createCustomActivity(opts) {
+  const phases = [{ name: opts.p1Name, duration: opts.p1Dur }];
+  if (opts.p2Name && opts.p2Dur > 0) {
+    phases.push({ name: opts.p2Name, duration: opts.p2Dur });
+  }
+  const cycleDuration = phases.reduce((s, p) => s + p.duration, 0);
+  return {
+    id: 'custom_' + Date.now(),
+    name: opts.name,
+    category: opts.category,
+    phases,
+    cycleDuration,
+    defaultCycles: opts.cycles,
+    cycles: opts.cycles,
+    custom: true
+  };
+}
+
+/* ═══════════════════════════════════════════
+   VESPER — Nighttime Routine
+   ═══════════════════════════════════════════ */
+const VESPER_PATTERNS = {
+  BOX:     { phases: [
+    { name: 'INHALE', duration: 4, fillStart: 0, fillEnd: 1, slope: 1 },
+    { name: 'HOLD', duration: 4, fillStart: 1, fillEnd: 1, slope: 0 },
+    { name: 'EXHALE', duration: 4, fillStart: 1, fillEnd: 0, slope: -1 },
+    { name: 'HOLD', duration: 4, fillStart: 0, fillEnd: 0, slope: 0 }
+  ], cycleDuration: 16, animation: 'goat', color: '#3b82f6' },
+  RF:      { phases: [
+    { name: 'INHALE', duration: 5.5, fillStart: 0, fillEnd: 1, slope: 1 },
+    { name: 'EXHALE', duration: 5.5, fillStart: 1, fillEnd: 0, slope: -1 }
+  ], cycleDuration: 11, animation: 'train', color: '#22c55e' },
+  EXT47:   { phases: [
+    { name: 'INHALE', duration: 4, fillStart: 0, fillEnd: 1, slope: 1 },
+    { name: 'EXHALE', duration: 7, fillStart: 1, fillEnd: 0, slope: -1 }
+  ], cycleDuration: 11, animation: 'train', color: '#a855f7' },
+  EXT48:   { phases: [
+    { name: 'INHALE', duration: 4, fillStart: 0, fillEnd: 1, slope: 1 },
+    { name: 'EXHALE', duration: 8, fillStart: 1, fillEnd: 0, slope: -1 }
+  ], cycleDuration: 12, animation: 'train', color: '#7c3aed' },
+  SLOW36:  { phases: [
+    { name: 'INHALE', duration: 3, fillStart: 0, fillEnd: 1, slope: 1 },
+    { name: 'EXHALE', duration: 6, fillStart: 1, fillEnd: 0, slope: -1 }
+  ], cycleDuration: 9, animation: 'train', color: '#6366f1' },
+  B478:    { phases: [
+    { name: 'INHALE', duration: 4, fillStart: 0, fillEnd: 1, slope: 1 },
+    { name: 'HOLD', duration: 7, fillStart: 1, fillEnd: 1, slope: 0 },
+    { name: 'EXHALE', duration: 8, fillStart: 1, fillEnd: 0, slope: -1 }
+  ], cycleDuration: 19, animation: 'goat', color: '#312e81' },
+  SIGH:    { phases: [
+    { name: 'INHALE', duration: 1.5, fillStart: 0, fillEnd: 0.75, slope: 1 },
+    { name: 'SIP!', duration: 0.6, fillStart: 0.75, fillEnd: 1, slope: 1 },
+    { name: 'EXHALE', duration: 8, fillStart: 1, fillEnd: 0, slope: -1 }
+  ], cycleDuration: 10.1, animation: 'dog', color: '#f59e0b' },
+  LATERAL: { phases: [
+    { name: 'INHALE', duration: 5.5, fillStart: 0, fillEnd: 1, slope: 1 },
+    { name: 'EXHALE', duration: 5.5, fillStart: 1, fillEnd: 0, slope: -1 }
+  ], cycleDuration: 11, animation: 'train', color: '#14b8a6' },
+};
+
+function createVesperActivity(name, totalDuration, patternKey, cue) {
+  const pattern = VESPER_PATTERNS[patternKey];
+  const cycles = Math.max(1, Math.round(totalDuration / pattern.cycleDuration));
+  return {
+    id: 'vesper_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+    name: name,
+    category: 'stretching',
+    animation: pattern.animation,
+    phases: pattern.phases,
+    cycleDuration: pattern.cycleDuration,
+    defaultCycles: cycles,
+    cycles: cycles,
+    cue: cue,
+    vesperColor: pattern.color,
+  };
+}
+
+const VESPER_POSITIONS = [
+  { name: 'Lateral Hang', dur: 60, subPhases: [
+    { name: 'Lateral Hang', dur: 60, pattern: 'BOX', cue: 'Find your grip. Let the shoulder open. Breathe naturally.' }
+  ]},
+  { name: 'Legs Up Wall', dur: 600, subPhases: [
+    { name: 'Legs Up — Settle', dur: 90, pattern: 'BOX', cue: 'Let the legs drain. Settle into the wall.' },
+    { name: 'Legs Up — Entraining', dur: 120, pattern: 'RF', cue: 'Baroreflex entraining. Feel the heart slow.' },
+    { name: 'Legs Up — Full HRV', dur: 120, pattern: 'RF', cue: 'Full entrainment. HRV maximizing.' },
+    { name: 'Legs Up — Deepening', dur: 270, pattern: 'EXT48', cue: 'Deepening. Feel the warmth in your face.' },
+  ]},
+  { name: 'Supine Frog', dur: 600, subPhases: [
+    { name: 'Supine Frog — Settle', dur: 60, pattern: 'BOX', cue: 'Let gravity open the hips. Don\'t force.' },
+    { name: 'Supine Frog — Pelvic Floor', dur: 120, pattern: 'EXT47', cue: 'Inhale — pelvic floor drops. Exhale — let it lift.' },
+    { name: 'Supine Frog — Deeper', dur: 120, pattern: 'EXT48', cue: 'Deeper release. Pelvic floor pumping with every breath.' },
+    { name: 'Supine Frog — Dissolve', dur: 300, pattern: 'SLOW36', cue: 'Almost sleep breathing. Fully dissolved.' },
+  ]},
+  { name: 'Normal Frog', dur: 600, subPhases: [
+    { name: 'Prone Frog — Settle', dur: 60, pattern: 'BOX', cue: 'Gravity loading the adductors. Find stability.' },
+    { name: 'Prone Frog — Rock', dur: 240, pattern: 'EXT48', cue: 'Rock hips gently on the exhale only.' },
+    { name: 'Prone Frog — Baroreflex', dur: 300, pattern: 'RF', cue: 'Baroreflex training inside the hold. Stay soft.' },
+  ]},
+  { name: 'Butterfly + Side Lean', dur: 180, subPhases: [
+    { name: 'Butterfly — Center', dur: 60, pattern: 'RF', cue: 'Breathe into the sides of the ribcage.' },
+    { name: 'Butterfly — Lean Left', dur: 45, pattern: 'LATERAL', cue: 'Breathe INTO the stretched side. Intercostals opening.' },
+    { name: 'Butterfly — Lean Right', dur: 45, pattern: 'LATERAL', cue: 'Breathe INTO the stretched side. Intercostals opening.' },
+    { name: 'Butterfly — Integrate', dur: 30, pattern: 'RF', cue: 'Return to center. Let it integrate.' },
+  ]},
+  { name: 'Arms Up and Back', dur: 600, subPhases: [
+    { name: 'Arms Up — Stretch', dur: 60, pattern: 'RF', cue: 'Each inhale takes you deeper into the stretch.' },
+    { name: 'Arms Up — Chest Open', dur: 120, pattern: 'RF', cue: 'Chest open. Anterior shoulder releasing.' },
+    { name: 'Arms Up — Thoracic', dur: 120, pattern: 'EXT47', cue: 'Thoracic spine softening.' },
+    { name: 'Arms Up — Vagus', dur: 300, pattern: 'EXT48', cue: 'Decompressing the vagus nerve. Maximum thoracic opening.' },
+  ]},
+  { name: 'Tech Neck', dur: 270, subPhases: [
+    { name: 'Chin Tucks', dur: 90, pattern: 'BOX', cue: 'Draw the chin straight back. Hold five seconds. Release.' },
+    { name: 'Neck Circles', dur: 90, pattern: 'RF', cue: 'Slow neck circles. Follow the breath. No forcing.' },
+    { name: 'Ear to Shoulder', dur: 90, pattern: 'RF', cue: 'Right ear to right shoulder. Breathe into the stretch.' },
+  ]},
+  { name: 'Pigeon Pose', dur: 1200, subPhases: [
+    { name: 'Pigeon R — Resist', dur: 90, pattern: 'BOX', cue: 'Right leg forward. The hip is resisting. Just breathe.' },
+    { name: 'Pigeon R — Wave 1', dur: 90, pattern: 'EXT47', cue: 'First release wave coming. Exhale it open.' },
+    { name: 'Pigeon R — Wave 2', dur: 120, pattern: 'EXT48', cue: 'Second wave. Piriformis releasing.' },
+    { name: 'Pigeon R — Sedation', dur: 300, pattern: 'B478', cue: 'Maximum sedation. Hip dissolving.' },
+    { name: 'Pigeon — Switch', dur: 10, pattern: 'RF', cue: 'Switch sides. Take your time.' },
+    { name: 'Pigeon L — Resist', dur: 90, pattern: 'BOX', cue: 'Left leg forward. The hip is resisting. Just breathe.' },
+    { name: 'Pigeon L — Wave 1', dur: 90, pattern: 'EXT47', cue: 'First release wave. Exhale it open.' },
+    { name: 'Pigeon L — Wave 2', dur: 110, pattern: 'EXT48', cue: 'Second wave. Piriformis releasing.' },
+    { name: 'Pigeon L — Sedation', dur: 300, pattern: 'B478', cue: 'Maximum sedation. Hip dissolving.' },
+  ]},
+  { name: 'Bed', dur: 114, subPhases: [
+    { name: 'Sleep — 4-7-8', dur: 114, pattern: 'B478', cue: 'Six cycles of 4-7-8. Let sleep find you.' },
+  ]},
+];
+
+function buildVesperPlaylist() {
+  const activities = [];
+  for (const pos of VESPER_POSITIONS) {
+    for (const sub of pos.subPhases) {
+      activities.push(createVesperActivity(sub.name, sub.dur, sub.pattern, sub.cue));
+    }
+  }
+  return activities;
+}
+
+/* ═══════════════════════════════════════════
+   ROUTINE LIBRARY — Generic presets (no attribution needed)
+   ═══════════════════════════════════════════ */
+const ROUTINE_LIBRARY = [
+  /* ── Focus / Pomodoro ── */
+  {
+    id: 'focus_session', name: 'Focus: Breathwork + Pomodoro', icon: '🍅', duration: '31 min',
+    desc: 'Pomodoro bookended with breathwork — 5 min box → 25 min work → 1 min sighing',
+    category: 'focus',
+    build: () => [
+      createVesperActivity('Box Breathing', 300, 'BOX', 'Settle in. Four counts each side. Build your focus.'),
+      { id: 'focus_work', name: 'Deep Work', category: 'workout', animation: 'none',
+        phases: [{ name: 'WORK', duration: 1500 }], cycleDuration: 1500, defaultCycles: 1, cycles: 1,
+        cue: 'Focus. One thing at a time.' },
+      createVesperActivity('Cyclic Sighing', 60, 'SIGH', 'Discharge. Double inhale, long exhale. Let it go.'),
+    ]
+  },
+  /* ── Evidence-Based Desk Wellness Breaks ── */
+  {
+    id: 'cyclic_sighing', name: 'Cyclic Sighing', icon: '😮‍💨', duration: '5 min',
+    desc: 'Stress reduction — Balban et al. 2023 (Cell Reports Medicine)',
+    category: 'quick',
+    build: () => [
+      createVesperActivity('Cyclic Sighing', 300, 'SIGH', 'Double inhale through the nose, long exhale through the mouth. 5 minutes.'),
+    ]
+  },
+  {
+    id: 'focus_reboot', name: 'Focus Reboot', icon: '🎯', duration: '5 min',
+    desc: 'Attentional control — autonomic balance via equal-ratio breathing',
+    category: 'quick',
+    build: () => [
+      createVesperActivity('Box Breathing', 300, 'BOX', 'Four counts in. Four counts hold. Four counts out. Four counts hold. Lock in.'),
+    ]
+  },
+  {
+    id: 'resonance', name: 'Resonance Protocol', icon: '💓', duration: '10 min',
+    desc: 'HRV maximizer — baroreflex resonance at 5.5 breaths/min (Lehrer et al.)',
+    category: 'recovery',
+    build: () => [
+      createVesperActivity('Coherence Breathing', 600, 'RF', '5.5 in, 5.5 out. Resonance frequency. Let your heart rate ride the wave.'),
+    ]
+  },
+  {
+    id: 'deep_calm', name: 'Deep Calm', icon: '🧘', duration: '10 min',
+    desc: 'Progressive parasympathetic — coherence into 4-7-8 sedative pattern',
+    category: 'recovery',
+    build: () => [
+      createVesperActivity('Coherence Breathing', 300, 'RF', 'Establish the rhythm. 5.5 in, 5.5 out.'),
+      createVesperActivity('4-7-8 Breathing', 300, 'B478', 'Deepen. Inhale 4, hold 7, exhale 8. Each cycle heavier than the last.'),
+    ]
+  },
+  {
+    id: 'wind_down', name: 'Wind Down', icon: '🌅', duration: '15 min',
+    desc: 'End-of-day decompression — progressive vagal deepening',
+    category: 'recovery',
+    build: () => [
+      createVesperActivity('Coherence Breathing', 300, 'RF', 'Settle in. 5.5 in, 5.5 out. Find the rhythm.'),
+      createVesperActivity('Extended Exhale', 300, 'EXT48', 'Shift the ratio. Inhale 4, exhale 8. Vagal brake engaging.'),
+      createVesperActivity('4-7-8 Breathing', 300, 'B478', 'Full sedative pattern. Inhale 4, hold 7, exhale 8. Let go completely.'),
+    ]
+  },
+];
+
+function buildRoutine(routineId) {
+  const routine = ROUTINE_LIBRARY.find(r => r.id === routineId);
+  if (!routine) return [];
+  return routine.build();
+}
+
+/* ═══════════════════════════════════════════
+   WORKOUT PROTOCOLS
+   ═══════════════════════════════════════════ */
+const WORKOUT_PROTOCOLS = {
+  seluyanov: {
+    id: 'seluyanov', name: 'Seluyanov TUT', emoji: '💪', animation: 'workout',
+    phases: [{ name: 'WORK', duration: 60 }, { name: 'REST', duration: 300 }],
+    cycleDuration: 360, defaultCycles: 3
+  },
+  emom: {
+    id: 'emom', name: 'EMOM', emoji: '⏱', animation: 'workout',
+    phases: [{ name: 'GO', duration: 60 }],
+    cycleDuration: 60, defaultCycles: 10
+  },
+};
+
+function createWorkoutActivity(id) {
+  const proto = WORKOUT_PROTOCOLS[id];
+  if (!proto) return null;
+  return { ...proto, category: 'workout', cycles: proto.defaultCycles };
+}
+
+function totalDuration(activity) {
+  const cycles = activity.cycles || activity.defaultCycles;
+  if (cycles === Infinity) return Infinity;
+  return activity.cycleDuration * cycles;
+}
+
+function formatTime(secs) {
+  if (!isFinite(secs)) return '∞';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+/* ═══════════════════════════════════════════
+   2. AUDIO ENGINE
+   ═══════════════════════════════════════════ */
+const AudioEngine = {
+  ctx: null,
+  muted: true, // silent by default
+
+  init() {
+    if (this.ctx) return;
+    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  },
+
+  _play(freq, type, dur, gain = 0.15) {
+    if (!this.ctx || this.muted) return;
+    const osc = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(gain, this.ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + dur);
+    osc.connect(g).connect(this.ctx.destination);
+    osc.start();
+    osc.stop(this.ctx.currentTime + dur);
+  },
+
+  phaseTransition(category) {},
+  countdownBeep(n) {},
+  completionChime() {}
+};
+
+/* ═══════════════════════════════════════════
+   3. ICONS (inline SVG)
+   ═══════════════════════════════════════════ */
+const Icons = {
+  lungs: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 8v16"/>
+    <path d="M24 14c-4 0-8 2-10 6s-4 12-2 16c1 2 3 3 5 3h4c2 0 3-1 3-3v-12"/>
+    <path d="M24 14c4 0 8 2 10 6s4 12 2 16c-1 2-3 3-5 3h-4c-2 0-3-1-3-3v-12"/>
+  </svg>`,
+
+  wave: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+    <path d="M4 24c4-8 8-8 12 0s8 8 12 0 8-8 12 0 4 0 4 0"/>
+  </svg>`,
+
+  box: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="10" y="10" width="28" height="28" rx="3"/>
+    <path d="M18 18h12M18 24h12M18 30h6"/>
+  </svg>`,
+
+  dumbbell: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+    <path d="M14 16v16M34 16v16M14 24h20"/>
+    <path d="M10 18v12M38 18v12"/>
+    <path d="M8 20v8M40 20v8"/>
+  </svg>`,
+
+  clock: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+    <circle cx="24" cy="24" r="18"/>
+    <path d="M24 12v12l8 4"/>
+  </svg>`,
+
+  stretch: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="24" cy="10" r="4"/>
+    <path d="M24 14v14"/>
+    <path d="M16 22l8 2 8-2"/>
+    <path d="M18 38l6-10 6 10"/>
+  </svg>`,
+
+  plus: `<svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round">
+    <path d="M24 12v24M12 24h24"/>
+  </svg>`,
+
+  forProtocol(id) {
+    const map = {
+      physio_sigh: this.lungs,
+      coherence: this.wave,
+      box: this.box,
+      seluyanov: this.dumbbell,
+      emom: this.clock,
+      stretch: this.stretch
+    };
+    return map[id] || this.clock;
+  }
+};
+
+/* ═══════════════════════════════════════════
+   4. STORAGE MANAGER
+   ═══════════════════════════════════════════ */
+const Storage = {
+  _k(name) { return 'decktimer_' + name; },
+
+  saveRoutine(name, items) {
+    const routines = this.getRoutines();
+    routines[name] = items.map(a => ({ id: a.id, cycles: a.cycles, custom: a.custom, name: a.name, category: a.category, phases: a.phases, cycleDuration: a.cycleDuration, defaultCycles: a.defaultCycles, animation: a.animation }));
+    localStorage.setItem(this._k('routines'), JSON.stringify(routines));
+    localStorage.setItem(this._k('lastRoutine'), name);
+  },
+
+  getRoutines() {
+    try { return JSON.parse(localStorage.getItem(this._k('routines'))) || {}; }
+    catch { return {}; }
+  },
+
+  deleteRoutine(name) {
+    const r = this.getRoutines();
+    delete r[name];
+    localStorage.setItem(this._k('routines'), JSON.stringify(r));
+  },
+
+  getLastRoutine() { return localStorage.getItem(this._k('lastRoutine')); },
+
+  loadRoutine(name) {
+    const r = this.getRoutines()[name];
+    if (!r) return null;
+    return r.map(item => {
+      if (item.custom) return item;
+      return createActivity(item.id, { cycles: item.cycles }) || item;
+    });
+  },
+
+  addHistory(entry) {
+    const h = this.getHistory();
+    h.unshift(entry);
+    if (h.length > 50) h.length = 50;
+    localStorage.setItem(this._k('history'), JSON.stringify(h));
+  },
+
+  getHistory() {
+    try { return JSON.parse(localStorage.getItem(this._k('history'))) || []; }
+    catch { return []; }
+  }
+};
+
+/* ═══════════════════════════════════════════
+   5. RETRO ANIMATIONS — Pixel Art Engine
+   ═══════════════════════════════════════════ */
+const RetroEngine = {
+  canvas: null,
+  ctx: null,
+  GW: 384,
+  GH: 216,
+  time: 0,
+  breathFill: 0,
+  prevBreathFill: 0,
+  phase: 'INHALE',
+  slope: 0,
+
+  // Shared state
+  cameraX: 0,
+  frameIdx: 0,
+  frameTimer: 0,
+  juggleCount: 0,
+  swayPhase: 0,
+  ballRotFrame: 0,
+  ballRotTimer: 0,
+
+  // Pixel font
+  FONT: {
+    'A': [0x60,0x90,0xf0,0x90,0x90], 'B': [0xe0,0x90,0xe0,0x90,0xe0],
+    'C': [0x70,0x80,0x80,0x80,0x70], 'D': [0xe0,0x90,0x90,0x90,0xe0],
+    'E': [0xf0,0x80,0xe0,0x80,0xf0], 'F': [0xf0,0x80,0xe0,0x80,0x80],
+    'G': [0x70,0x80,0xb0,0x90,0x70], 'H': [0x90,0x90,0xf0,0x90,0x90],
+    'I': [0xe0,0x40,0x40,0x40,0xe0], 'J': [0x70,0x10,0x10,0x90,0x60],
+    'K': [0x90,0xa0,0xc0,0xa0,0x90], 'L': [0x80,0x80,0x80,0x80,0xf0],
+    'M': [0x90,0xf0,0xf0,0x90,0x90], 'N': [0x90,0xd0,0xb0,0x90,0x90],
+    'O': [0x60,0x90,0x90,0x90,0x60], 'P': [0xe0,0x90,0xe0,0x80,0x80],
+    'R': [0xe0,0x90,0xe0,0xa0,0x90], 'S': [0x70,0x80,0x60,0x10,0xe0],
+    'T': [0xf0,0x40,0x40,0x40,0x40], 'U': [0x90,0x90,0x90,0x90,0x60],
+    'V': [0x90,0x90,0x90,0x60,0x60], 'W': [0x90,0x90,0xf0,0xf0,0x90],
+    'X': [0x90,0x90,0x60,0x90,0x90], 'Y': [0x90,0x90,0x60,0x40,0x40],
+    'Z': [0xf0,0x10,0x60,0x80,0xf0],
+    '0': [0x60,0x90,0x90,0x90,0x60], '1': [0x40,0xc0,0x40,0x40,0xe0],
+    '2': [0x60,0x90,0x20,0x40,0xf0], '3': [0xe0,0x10,0x60,0x10,0xe0],
+    '4': [0x90,0x90,0xf0,0x10,0x10], '5': [0xf0,0x80,0xe0,0x10,0xe0],
+    '6': [0x60,0x80,0xe0,0x90,0x60], '7': [0xf0,0x10,0x20,0x40,0x40],
+    '8': [0x60,0x90,0x60,0x90,0x60], '9': [0x60,0x90,0x70,0x10,0x60],
+    ' ': [0,0,0,0,0], '-': [0,0,0xe0,0,0], '.': [0,0,0,0,0x40],
+    ':': [0,0x40,0,0x40,0], '/': [0x10,0x20,0x40,0x80,0x00],
+    '!': [0x40,0x40,0x40,0,0x40],
+  },
+
+  init(canvas) {
+    this.canvas = canvas;
+    this.canvas.width = 384;
+    this.canvas.height = 216;
+    this.ctx = canvas.getContext('2d');
+    this.time = 0;
+    this.cameraX = 0;
+    this.frameIdx = 0;
+    this.juggleCount = 0;
+    this.breathFill = 0;
+    this.prevBreathFill = 0;
+  },
+
+  smoothstep(t) { return t * t * (3 - 2 * t); },
+  lerp(a, b, t) { return a + (b - a) * t; },
+
+  drawPixel(x, y, color) {
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(Math.floor(x), Math.floor(y), 1, 1);
+  },
+
+  drawRect(x, y, w, h, color) {
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(Math.floor(x), Math.floor(y), w, h);
+  },
+
+  drawText(text, x, y, color, shadow) {
+    text = text.toUpperCase();
+    let cx = Math.floor(x);
+    for (let c = 0; c < text.length; c++) {
+      const glyph = this.FONT[text[c]];
+      if (glyph) {
+        for (let row = 0; row < 5; row++) {
+          for (let col = 0; col < 4; col++) {
+            if (glyph[row] & (1 << (7 - col))) {
+              if (shadow) this.drawPixel(cx + col + 1, y + row + 1, shadow);
+              this.drawPixel(cx + col, y + row, color);
+            }
+          }
+        }
+      }
+      cx += 5;
+    }
+  },
+
+  drawTextCentered(text, y, color, shadow) {
+    const w = text.length * 5;
+    this.drawText(text, Math.floor((this.GW - w) / 2), y, color, shadow);
+  },
+
+  // Smooth terrain fill — draws as a single path, no per-pixel staircase
+  fillTerrain(getHeight, layers, cameraX) {
+    const ctx = this.ctx;
+    const W = this.GW, H = this.GH;
+    // Draw layers from bottom (deepest) to top (surface)
+    for (let li = layers.length - 1; li >= 0; li--) {
+      const layer = layers[li];
+      ctx.fillStyle = layer.color;
+      ctx.beginPath();
+      ctx.moveTo(0, H);
+      for (let x = 0; x <= W; x++) {
+        const wx = x + cameraX;
+        const ty = getHeight(wx);
+        ctx.lineTo(x, ty + (layer.depth || 0));
+      }
+      ctx.lineTo(W, H);
+      ctx.closePath();
+      ctx.fill();
+    }
+  },
+
+  hashTile(n) {
+    n = ((n >> 16) ^ n) * 0x45d9f3b;
+    n = ((n >> 16) ^ n) * 0x45d9f3b;
+    n = (n >> 16) ^ n;
+    return Math.abs(n);
+  },
+
+  // Update breath fill from TimerEngine state
+  updateBreathState(dt) {
+    this.time += dt;
+    const engine = TimerEngine;
+    const a = engine.activity;
+    if (!a || !a.phases[engine.phaseIdx]) return;
+
+    const phase = a.phases[engine.phaseIdx];
+    this.phase = phase.name;
+    this.slope = phase.slope || 0;
+
+    if (phase.fillStart !== undefined && phase.fillEnd !== undefined) {
+      const progress = Math.min(1, engine.elapsed / phase.duration);
+      this.prevBreathFill = this.breathFill;
+      this.breathFill = phase.fillStart + (phase.fillEnd - phase.fillStart) * this.smoothstep(progress);
+
+      // Count juggles
+      if (this.breathFill > 0.5 && this.prevBreathFill <= 0.5) {
+        this.juggleCount++;
+      }
+    }
+
+    // Animation frame
+    this.frameTimer += dt;
+    if (this.frameTimer > 0.15) {
+      this.frameTimer = 0;
+      this.frameIdx = (this.frameIdx + 1) % 4;
+    }
+
+    // Ball rotation
+    const fillSpeed = Math.abs(this.breathFill - this.prevBreathFill) / Math.max(dt, 0.001);
+    this.ballRotTimer += dt * (2 + fillSpeed * 20);
+    if (this.ballRotTimer > 0.2) {
+      this.ballRotTimer = 0;
+      this.ballRotFrame = (this.ballRotFrame + 1) % 4;
+    }
+
+    this.swayPhase += dt * 2.5;
+  }
+};
+
+/* ── Elevator Animation (Box Breathing) ── */
+const GoatAnim = {
+  // Building cross-section with narrow elevator shaft.
+  // Doors OPEN on HOLD, CLOSE on INHALE/EXHALE.
+  FLOORS: 8,
+  SHAFT_X: 176, // centered in 384px
+  SHAFT_W: 32,
+  TOP_Y: 46,
+  BOT_Y: 196,
+  doorAnim: 0, // 0=closed, 1=open, animates smoothly
+
+  draw(dt) {
+    const R = RetroEngine;
+    const ctx = R.ctx;
+    const W = R.GW, H = R.GH;
+    const fill = R.breathFill;
+    const isHold = R.slope === 0;
+
+    // Background — dark building interior
+    ctx.fillStyle = '#181820';
+    ctx.fillRect(0, 0, W, H);
+
+    const SX = this.SHAFT_X, SW = this.SHAFT_W;
+    const TY = this.TOP_Y, BY = this.BOT_Y;
+    const shaftH = BY - TY;
+    const floorH = shaftH / this.FLOORS;
+
+    // ── Left wing — rooms with windows ──
+    for (let f = 0; f < this.FLOORS; f++) {
+      const fy = TY + f * floorH;
+      R.drawRect(8, Math.floor(fy), SX - 12, 1, '#303040');
+      for (let r = 0; r < 5; r++) {
+        const rx = 12 + r * 32;
+        if (rx + 26 > SX - 6) break;
+        const ry = Math.floor(fy) + 2;
+        const fH = Math.floor(floorH) - 3;
+        R.drawRect(rx, ry, 26, fH, '#222230');
+        const lit = R.hashTile(f * 10 + r + Math.floor(R.time * 0.3)) % 3 !== 0;
+        const wCol = lit ? '#504828' : '#1a1a28';
+        R.drawRect(rx + 3, ry + 2, 8, fH - 4, wCol);
+        R.drawRect(rx + 15, ry + 2, 8, fH - 4, wCol);
+        if (lit) {
+          R.drawRect(rx + 4, ry + 3, 6, fH - 6, '#605030');
+          R.drawRect(rx + 16, ry + 3, 6, fH - 6, '#605030');
+        }
+      }
+    }
+
+    // ── Right wing — rooms with windows ──
+    for (let f = 0; f < this.FLOORS; f++) {
+      const fy = TY + f * floorH;
+      R.drawRect(SX + SW + 4, Math.floor(fy), W - SX - SW - 12, 1, '#303040');
+      for (let r = 0; r < 5; r++) {
+        const rx = SX + SW + 8 + r * 32;
+        if (rx + 26 > W - 8) break;
+        const ry = Math.floor(fy) + 2;
+        const fH = Math.floor(floorH) - 3;
+        R.drawRect(rx, ry, 26, fH, '#222230');
+        const lit = R.hashTile(f * 10 + r + 50 + Math.floor(R.time * 0.2)) % 3 !== 0;
+        const wCol = lit ? '#504828' : '#1a1a28';
+        R.drawRect(rx + 3, ry + 2, 8, fH - 4, wCol);
+        R.drawRect(rx + 15, ry + 2, 8, fH - 4, wCol);
+        if (lit) {
+          R.drawRect(rx + 4, ry + 3, 6, fH - 6, '#605030');
+          R.drawRect(rx + 16, ry + 3, 6, fH - 6, '#605030');
+        }
+      }
+    }
+
+    // ── Elevator shaft ──
+    R.drawRect(SX - 2, TY - 2, 2, shaftH + 4, '#404050');
+    R.drawRect(SX + SW, TY - 2, 2, shaftH + 4, '#404050');
+    R.drawRect(SX, TY, SW, shaftH, '#0c0c14');
+
+    // Floor markers & numbers (outside shaft on left wall)
+    for (let f = 0; f <= this.FLOORS; f++) {
+      const fy = Math.floor(TY + f * floorH);
+      R.drawRect(SX, fy, SW, 1, '#252535');
+      if (f < this.FLOORS) {
+        R.drawText(String(this.FLOORS - f), SX - 8, fy + 3, '#404060', null);
+      }
+    }
+
+    // Guide rails
+    R.drawRect(SX + 3, TY, 1, shaftH, '#1a1a28');
+    R.drawRect(SX + SW - 4, TY, 1, shaftH, '#1a1a28');
+
+    // Cable
+    const elevY = BY - fill * shaftH;
+    const cableX = SX + Math.floor(SW / 2);
+    R.drawRect(cableX, TY - 2, 1, Math.floor(elevY - TY + 2), '#383848');
+
+    // ── Elevator car ──
+    const carH = Math.floor(floorH) - 2;
+    const carY = Math.floor(elevY) - carH + 1;
+
+    // Car frame
+    R.drawRect(SX + 2, carY - 1, SW - 4, 1, '#586070'); // top rail
+    R.drawRect(SX + 2, carY + carH, SW - 4, 1, '#384050'); // bottom rail
+    // Car body
+    R.drawRect(SX + 3, carY, SW - 6, carH, '#485060');
+    // Interior ceiling light
+    R.drawRect(SX + 6, carY + 1, SW - 12, 1, '#a09070');
+
+    // ── Doors — animate open on HOLD, closed on INHALE/EXHALE ──
+    const doorFullW = Math.floor((SW - 8) / 2);
+    // Smooth door animation
+    const doorTarget = isHold ? 1 : 0;
+    this.doorAnim += (doorTarget - this.doorAnim) * Math.min(1, dt * 4);
+    if (Math.abs(this.doorAnim - doorTarget) < 0.01) this.doorAnim = doorTarget;
+
+    const doorSlide = Math.floor(this.doorAnim * doorFullW);
+    const leftDoorX = SX + 4;
+    const rightDoorX = SX + 4 + doorFullW;
+    const doorH = carH - 3;
+    const doorY = carY + 2;
+
+    // Interior always visible behind doors
+    R.drawRect(SX + 4, doorY, SW - 8, doorH, '#2a2018');
+
+    // Person silhouette inside
+    const personX = SX + Math.floor(SW / 2) - 2;
+    R.drawRect(personX, doorY + 2, 3, 3, '#1a1810');
+    R.drawRect(personX - 1, doorY + 5, 5, Math.max(1, doorH - 7), '#1a1810');
+
+    // Doors — always drawn, slide open/closed
+    R.drawRect(leftDoorX - doorSlide, doorY, doorFullW, doorH, '#607888');
+    R.drawRect(rightDoorX + doorSlide, doorY, doorFullW, doorH, '#607888');
+    // Door handles
+    R.drawPixel(leftDoorX - doorSlide + doorFullW - 2, doorY + Math.floor(doorH / 2), '#909090');
+    R.drawPixel(rightDoorX + doorSlide + 1, doorY + Math.floor(doorH / 2), '#909090');
+    // Door seam when fully closed
+    if (this.doorAnim < 0.05) {
+      R.drawRect(SX + 3 + doorFullW, doorY, 1, doorH, '#0c0c14');
+    }
+
+    // ── HOLD glow — pulsing warm light spilling out when doors open ──
+    if (this.doorAnim > 0.1) {
+      const pulse = 0.3 + Math.sin(R.time * 3) * 0.15;
+      const glowAlpha = this.doorAnim * pulse;
+      const gapW = doorSlide * 2;
+      const gapX = leftDoorX + doorFullW - doorSlide;
+      // Warm light on floor walls either side of shaft
+      ctx.fillStyle = `rgba(180,140,60,${glowAlpha * 0.15})`;
+      ctx.fillRect(gapX - 20, doorY, 20, doorH);
+      ctx.fillRect(gapX + gapW, doorY, 20, doorH);
+      // Interior glow
+      ctx.fillStyle = `rgba(200,160,80,${glowAlpha * 0.3})`;
+      ctx.fillRect(gapX, doorY, gapW, doorH);
+    }
+
+    // ── Big countdown — "INHALE 4" "HOLD 3" centered at top ──
+    const phaseColors = { 'INHALE': '#78d878', 'EXHALE': '#d8a878', 'HOLD': '#d8d878', 'SIP!': '#f0e068' };
+    const pCol = phaseColors[R.phase] || '#f8f8f0';
+    const engine = TimerEngine;
+    const remaining = Math.ceil(Math.max(0, engine.phaseDuration - engine.elapsed));
+    const countText = R.phase + ' ' + remaining;
+    const textY = 6;
+    const chars = countText.toUpperCase();
+    const totalW = chars.length * 10; // double-size = 8px per char + 2px gap
+    let cx = Math.floor((W - totalW) / 2);
+    for (let c = 0; c < chars.length; c++) {
+      const glyph = R.FONT[chars[c]];
+      if (glyph) {
+        for (let row = 0; row < 5; row++) {
+          for (let col = 0; col < 4; col++) {
+            if (glyph[row] & (1 << (7 - col))) {
+              R.drawRect(cx + col * 2 + 1, textY + row * 2 + 1, 2, 2, '#000000');
+              R.drawRect(cx + col * 2, textY + row * 2, 2, 2, pCol);
+            }
+          }
+        }
+      }
+      cx += 10;
+    }
+  }
+};
+
+/* ── Night Train Animation (Coherence Breathing) ── */
+const TrainAnim = {
+  TERRAIN_BASE_Y: 150,
+  TERRAIN_AMPLITUDE: 50,
+  smokePuffs: [],
+  nightStars: [],
+  _inited: false,
+
+  _init() {
+    if (this._inited) return;
+    this._inited = true;
+    for (let i = 0; i < 40; i++) {
+      this.nightStars.push({
+        x: Math.floor(Math.random() * 384),
+        y: Math.floor(Math.random() * 70),
+        phase: Math.random() * Math.PI * 2,
+        bright: Math.random() > 0.7
+      });
+    }
+  },
+
+  getBreathFillAtTime(bTime) {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    if (!a) return 0;
+    const cycleDur = a.cycleDuration;
+    const phases = a.phases;
+    let t = ((bTime % cycleDur) + cycleDur) % cycleDur;
+    for (let i = 0; i < phases.length; i++) {
+      if (t < phases[i].duration) {
+        const progress = t / phases[i].duration;
+        if (phases[i].fillStart !== undefined) {
+          return phases[i].fillStart + (phases[i].fillEnd - phases[i].fillStart) * RetroEngine.smoothstep(progress);
+        }
+        return 0;
+      }
+      t -= phases[i].duration;
+    }
+    return 0;
+  },
+
+  _phaseElapsed() {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    let elapsed = 0;
+    for (let i = 0; i < engine.phaseIdx; i++) elapsed += a.phases[i].duration;
+    elapsed += engine.elapsed;
+    return elapsed;
+  },
+
+  getTerrainHeight(worldX) {
+    const R = RetroEngine;
+    const pixelsPerSecond = 22;
+    const trainWorldX = R.cameraX + 120;
+    const timeDelta = (worldX - trainWorldX) / pixelsPerSecond;
+    const engine = TimerEngine;
+    const totalBreathTime = (engine.cycleIdx * engine.activity.cycleDuration) + this._phaseElapsed();
+    const bTime = totalBreathTime + timeDelta;
+    const fill = this.getBreathFillAtTime(bTime);
+    return this.TERRAIN_BASE_Y - fill * this.TERRAIN_AMPLITUDE;
+  },
+
+  draw(dt) {
+    this._init();
+    const R = RetroEngine;
+    const ctx = R.ctx;
+    const W = R.GW, H = R.GH;
+
+    R.cameraX += 22 * dt;
+
+    // ── Twilight sky — deep blue to warm horizon ──
+    for (let y = 0; y < 90; y++) {
+      const t = y / 90;
+      const r = R.lerp(0x18, 0x50, t);
+      const g = R.lerp(0x20, 0x40, t);
+      const b = R.lerp(0x48, 0x68, t);
+      ctx.fillStyle = `rgb(${Math.floor(r)},${Math.floor(g)},${Math.floor(b)})`;
+      ctx.fillRect(0, y, W, 1);
+    }
+    // Warm horizon band
+    for (let y = 70; y < 90; y++) {
+      const t = (y - 70) / 20;
+      ctx.fillStyle = `rgba(120,80,50,${t * 0.25})`;
+      ctx.fillRect(0, y, W, 1);
+    }
+    // Stars (brighter against twilight)
+    for (const star of this.nightStars) {
+      const twinkle = Math.sin(R.time * 1.5 + star.phase);
+      if (twinkle > -0.3) {
+        R.drawPixel(star.x, star.y, star.bright && twinkle > 0.5 ? '#ffffff' : '#b0b8d0');
+      }
+    }
+    // Moon (bigger glow)
+    R.drawRect(320, 12, 3, 3, '#fffff0');
+    R.drawRect(321, 11, 2, 1, '#fafae0');
+    R.drawRect(321, 15, 2, 1, '#fafae0');
+    R.drawPixel(319, 13, '#fafae0');
+    R.drawPixel(323, 13, '#fafae0');
+    ctx.save();
+    const moonGrad = ctx.createRadialGradient(321, 13, 3, 321, 13, 30);
+    moonGrad.addColorStop(0, 'rgba(220,210,180,0.15)');
+    moonGrad.addColorStop(0.5, 'rgba(180,170,140,0.06)');
+    moonGrad.addColorStop(1, 'rgba(180,170,140,0)');
+    ctx.fillStyle = moonGrad;
+    ctx.fillRect(290, 0, 60, 50);
+    ctx.restore();
+
+    // ── Far hills (muted blue-purple) ──
+    const hillScroll = R.cameraX * 0.12;
+    for (let x = 0; x < W; x++) {
+      const wx = x + hillScroll;
+      const h = Math.sin(wx * 0.008) * 20 + Math.sin(wx * 0.02) * 12 + 30;
+      const top = 90 - h;
+      for (let y = Math.floor(top); y < 120; y++) {
+        R.drawPixel(x, y, y < top + 2 ? '#384868' : '#283850');
+      }
+    }
+
+    // ── Mid hills (dark green-blue) ──
+    const midScroll = R.cameraX * 0.3;
+    for (let x = 0; x < W; x++) {
+      const wx = x + midScroll;
+      const h = Math.sin(wx * 0.015) * 15 + Math.sin(wx * 0.03) * 8 + 22;
+      const top = 110 - h;
+      for (let y = Math.floor(top); y < 140; y++) {
+        R.drawPixel(x, y, y < top + 2 ? '#2a4838' : '#1a3828');
+      }
+    }
+
+    // ── Main terrain — smooth path fill ──
+    const self = this;
+    R.fillTerrain(
+      (wx) => self.getTerrainHeight(wx),
+      [
+        { depth: 10, color: '#382810' },
+        { depth: 6, color: '#4a3820' },
+        { depth: 3, color: '#284030' },
+        { depth: 1, color: '#2a4828' },
+        { depth: 0, color: '#3a5838' },
+      ],
+      R.cameraX
+    );
+
+    // Rail tracks + sleepers (on top of filled terrain)
+    for (let x = 0; x < W; x++) {
+      const wx = x + R.cameraX;
+      const ty = this.getTerrainHeight(wx);
+      R.drawPixel(x, Math.floor(ty) + 1, '#808890');
+      R.drawPixel(x, Math.floor(ty) + 4, '#808890');
+      if (Math.floor(wx) % 8 < 2) {
+        R.drawPixel(x, Math.floor(ty) + 2, '#584030');
+        R.drawPixel(x, Math.floor(ty) + 3, '#584030');
+      }
+    }
+
+    // ── Telegraph poles & trees ──
+    const startTile = Math.floor(R.cameraX / 16) - 1;
+    const endTile = startTile + Math.ceil(W / 16) + 2;
+    for (let tile = startTile; tile <= endTile; tile++) {
+      const wx = tile * 16;
+      const screenX = wx - R.cameraX;
+      const terrainY = this.getTerrainHeight(wx);
+      const seed = R.hashTile(tile);
+      if (seed % 12 === 0) {
+        const px = Math.floor(screenX);
+        const py = Math.floor(terrainY);
+        R.drawRect(px, py - 28, 1, 28, '#484038');
+        R.drawRect(px - 3, py - 28, 7, 1, '#484038');
+        R.drawPixel(px + 4, py - 27, '#506050');
+        R.drawPixel(px + 5, py - 26, '#506050');
+      }
+      if (seed % 8 === 0 && seed % 12 !== 0) {
+        const tx = Math.floor(screenX);
+        const ty = Math.floor(terrainY);
+        R.drawRect(tx + 1, ty - 18, 2, 14, '#1a2818');
+        R.drawRect(tx - 2, ty - 24, 8, 7, '#1a3820');
+        R.drawRect(tx - 1, ty - 26, 6, 3, '#1a2818');
+      }
+    }
+
+    // ── Train ──
+    const trainX = 100;
+    const trainTerrainY = this.getTerrainHeight(R.cameraX + trainX);
+    this.drawTrain(trainX, trainTerrainY, R.frameIdx, dt);
+
+    // ── Smoke puffs ──
+    this.updateSmoke(dt, trainX, trainTerrainY);
+    for (const puff of this.smokePuffs) {
+      if (puff.life <= 0) continue;
+      const alpha = Math.max(0, puff.life / puff.maxLife) * 0.4;
+      const size = Math.floor(2 + (1 - puff.life / puff.maxLife) * 4);
+      ctx.fillStyle = `rgba(180,180,170,${alpha})`;
+      ctx.fillRect(Math.floor(puff.x), Math.floor(puff.y), size, size);
+    }
+
+    // ── Phase label + smooth progress bar (no counts — coherence is a wave, not a metronome) ──
+    const phaseColors = { 'INHALE': '#78d878', 'EXHALE': '#d8a878', 'HOLD': '#d8d878', 'SIP!': '#f0e068' };
+    const pCol = phaseColors[R.phase] || '#f8f8f0';
+    const engine = TimerEngine;
+
+    // Double-size phase text (INHALE / EXHALE only, no numbers)
+    const textY = H - 20;
+    const chars = R.phase.toUpperCase();
+    const totalTextW = chars.length * 10;
+    let cx = Math.floor((W - totalTextW) / 2);
+    for (let c = 0; c < chars.length; c++) {
+      const glyph = R.FONT[chars[c]];
+      if (glyph) {
+        for (let row = 0; row < 5; row++) {
+          for (let col = 0; col < 4; col++) {
+            if (glyph[row] & (1 << (7 - col))) {
+              R.drawRect(cx + col * 2 + 1, textY + row * 2 + 1, 2, 2, '#000000');
+              R.drawRect(cx + col * 2, textY + row * 2, 2, 2, pCol);
+            }
+          }
+        }
+      }
+      cx += 10;
+    }
+
+    // Smooth progress bar under text — fills smoothly across the phase
+    const barW = 80;
+    const barX = Math.floor((W - barW) / 2);
+    const barY = textY + 13;
+    R.drawRect(barX, barY, barW, 3, '#101020');
+    const progress = Math.min(1, engine.elapsed / engine.phaseDuration);
+    const fillW = Math.floor(progress * (barW - 2));
+    if (fillW > 0) R.drawRect(barX + 1, barY + 1, fillW, 1, pCol);
+
+    // Breath meter (right side)
+    const mx = W - 10, my = 18, mh = 50;
+    R.drawRect(mx, my, 4, mh, '#000000');
+    const fillH = Math.floor(R.breathFill * mh);
+    if (fillH > 0) R.drawRect(mx, my + mh - fillH, 4, fillH, pCol);
+  },
+
+  drawTrain(x, terrainY, frameIdx, dt) {
+    const R = RetroEngine;
+    const sx = Math.floor(x);
+    const sy = Math.floor(terrainY) - 10;
+    const px = (lx, ly, col) => R.drawPixel(sx + lx, sy + ly, col);
+
+    const B = '#282828', Bd = '#181818', Br = '#a02020';
+    const G = '#484848', Gl = '#585858', Y = '#ffd830';
+
+    // Headlight glow
+    R.ctx.save();
+    const beamGrad = R.ctx.createRadialGradient(sx - 1, sy + 5, 1, sx - 8, sy + 5, 25);
+    beamGrad.addColorStop(0, 'rgba(255,220,100,0.10)');
+    beamGrad.addColorStop(1, 'rgba(255,220,100,0)');
+    R.ctx.fillStyle = beamGrad;
+    R.ctx.fillRect(sx - 30, sy - 2, 32, 14);
+    R.ctx.restore();
+
+    // Cow catcher
+    px(-1, 9, G); px(0, 9, G);
+
+    // Boiler (compact: 10px wide, 5px tall)
+    for (let bx = 0; bx < 10; bx++) {
+      for (let by = 3; by < 9; by++) {
+        px(bx, by, by < 5 ? B : Bd);
+      }
+    }
+    // Boiler top
+    for (let bx = 1; bx < 9; bx++) px(bx, 2, B);
+    // Red stripe
+    for (let bx = 0; bx < 10; bx++) px(bx, 7, Br);
+    // Headlight
+    px(-1, 5, Y); px(0, 5, Y);
+
+    // Smokestack
+    px(2, 1, B); px(3, 1, B);
+    px(1, 0, G); px(2, 0, G); px(3, 0, G); px(4, 0, G);
+
+    // Cab (6px wide)
+    for (let bx = 10; bx < 16; bx++) {
+      for (let by = 1; by < 9; by++) {
+        px(bx, by, by < 2 ? G : (by < 3 ? B : Bd));
+      }
+    }
+    // Cab roof
+    for (let bx = 9; bx < 17; bx++) px(bx, 0, Gl);
+    // Window
+    px(11, 2, '#504830'); px(12, 2, '#504830'); px(13, 2, '#504830');
+    px(11, 3, '#403820'); px(12, 3, '#403820'); px(13, 3, '#403820');
+
+    // Wheels (animated, 2px each)
+    const wf = frameIdx % 4;
+    for (const wx of [2, 7, 12]) {
+      px(wx, 9, G); px(wx + 1, 9, G);
+      px(wx, 10, G); px(wx + 1, 10, G);
+      const sp = [[0,0],[1,0],[1,1],[0,1]][wf];
+      px(wx + sp[0], 9 + sp[1], '#e0e0d0');
+    }
+    // Rod
+    const rodOff = [0, 0, 1, 1][wf];
+    for (let rx = 3; rx < 13; rx++) px(rx, 9 + rodOff, '#705830');
+
+    // Tender (coal car, 8px)
+    for (let bx = 17; bx < 25; bx++) {
+      for (let by = 3; by < 9; by++) {
+        px(bx, by, by < 5 ? '#101010' : Bd);
+      }
+    }
+    // Tender wheels
+    for (const wx of [18, 22]) {
+      px(wx, 9, G); px(wx + 1, 9, G);
+      px(wx, 10, G); px(wx + 1, 10, G);
+    }
+  },
+
+  updateSmoke(dt, trainX, terrainY) {
+    // Emit new puffs
+    if (Math.random() < 8 * dt) {
+      this.smokePuffs.push({
+        x: trainX + 2,
+        y: terrainY - 12,
+        vx: -8 + Math.random() * 4,
+        vy: -6 - Math.random() * 4,
+        life: 2 + Math.random(),
+        maxLife: 2 + Math.random(),
+      });
+    }
+    // Update existing
+    for (let i = this.smokePuffs.length - 1; i >= 0; i--) {
+      const p = this.smokePuffs[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vy -= 2 * dt; // rise faster over time
+      p.life -= dt;
+      if (p.life <= 0) this.smokePuffs.splice(i, 1);
+    }
+    // Cap array
+    if (this.smokePuffs.length > 60) this.smokePuffs.length = 60;
+  }
+};
+
+/* ── Night Goat Animation (Coherence Breathing) ── */
+const GoatNightAnim = {
+  TERRAIN_BASE_Y: 150,
+  TERRAIN_AMPLITUDE: 55,
+
+  getBreathFillAtTime(bTime) {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    if (!a) return 0;
+    const cycleDur = a.cycleDuration;
+    const phases = a.phases;
+    let t = ((bTime % cycleDur) + cycleDur) % cycleDur;
+    for (let i = 0; i < phases.length; i++) {
+      if (t < phases[i].duration) {
+        const progress = t / phases[i].duration;
+        if (phases[i].fillStart !== undefined) {
+          return phases[i].fillStart + (phases[i].fillEnd - phases[i].fillStart) * RetroEngine.smoothstep(progress);
+        }
+        return 0;
+      }
+      t -= phases[i].duration;
+    }
+    return 0;
+  },
+
+  _phaseElapsed() {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    let elapsed = 0;
+    for (let i = 0; i < engine.phaseIdx; i++) elapsed += a.phases[i].duration;
+    elapsed += engine.elapsed;
+    return elapsed;
+  },
+
+  getTerrainHeight(worldX) {
+    const R = RetroEngine;
+    const pixelsPerSecond = 22;
+    const goatWorldX = R.cameraX + 100;
+    const timeDelta = (worldX - goatWorldX) / pixelsPerSecond;
+    const engine = TimerEngine;
+    const totalBreathTime = (engine.cycleIdx * engine.activity.cycleDuration) + this._phaseElapsed();
+    const bTime = totalBreathTime + timeDelta;
+    const fill = this.getBreathFillAtTime(bTime);
+    return this.TERRAIN_BASE_Y - fill * this.TERRAIN_AMPLITUDE;
+  },
+
+  nightStars: [],
+  _inited: false,
+  _init() {
+    if (this._inited) return;
+    this._inited = true;
+    for (let i = 0; i < 50; i++) {
+      this.nightStars.push({
+        x: Math.floor(Math.random() * 384),
+        y: Math.floor(Math.random() * 80),
+        phase: Math.random() * Math.PI * 2,
+        bright: Math.random() > 0.6
+      });
+    }
+  },
+
+  draw(dt) {
+    this._init();
+    const R = RetroEngine;
+    const ctx = R.ctx;
+    const W = R.GW, H = R.GH;
+
+    R.cameraX += 22 * dt;
+
+    // ── Night sky ──
+    for (let y = 0; y < 90; y++) {
+      const t = y / 90;
+      ctx.fillStyle = `rgb(${Math.floor(R.lerp(0x08, 0x18, t))},${Math.floor(R.lerp(0x0a, 0x20, t))},${Math.floor(R.lerp(0x20, 0x40, t))})`;
+      ctx.fillRect(0, y, W, 1);
+    }
+    // Stars
+    for (const star of this.nightStars) {
+      const twinkle = Math.sin(R.time * 1.5 + star.phase);
+      if (twinkle > -0.3) {
+        R.drawPixel(star.x, star.y, star.bright && twinkle > 0.5 ? '#ffffff' : '#8090b0');
+      }
+    }
+    // Moon
+    R.drawRect(340, 14, 4, 4, '#fffff0');
+    R.drawRect(341, 13, 3, 1, '#fafae0');
+    R.drawRect(341, 18, 3, 1, '#fafae0');
+    ctx.save();
+    const moonGrad = ctx.createRadialGradient(342, 15, 3, 342, 15, 25);
+    moonGrad.addColorStop(0, 'rgba(220,210,180,0.12)');
+    moonGrad.addColorStop(1, 'rgba(220,210,180,0)');
+    ctx.fillStyle = moonGrad;
+    ctx.fillRect(315, 0, 55, 45);
+    ctx.restore();
+
+    // ── Far mountains (dark silhouette) ──
+    const mtnScroll = R.cameraX * 0.1;
+    for (let x = 0; x < W; x++) {
+      const wx = x + mtnScroll;
+      const h1 = Math.sin(wx * 0.006) * 25 + Math.sin(wx * 0.012) * 15 + Math.cos(wx * 0.003) * 18;
+      const top1 = 75 - h1;
+      for (let y = Math.floor(top1); y < 110; y++) {
+        R.drawPixel(x, y, y < top1 + 2 ? '#283850' : '#1a2840');
+      }
+    }
+
+    // ── Mid hills ──
+    const hillScroll = R.cameraX * 0.3;
+    for (let x = 0; x < W; x++) {
+      const wx = x + hillScroll;
+      const h = Math.sin(wx * 0.01) * 18 + Math.sin(wx * 0.022) * 10 + 28;
+      const top = 110 - h;
+      for (let y = Math.floor(top); y < 140; y++) {
+        R.drawPixel(x, y, y < top + 2 ? '#1a3828' : '#102818');
+      }
+    }
+
+    // ── Main terrain — smooth path fill ──
+    const self = this;
+    R.fillTerrain(
+      (wx) => self.getTerrainHeight(wx),
+      [
+        { depth: 12, color: '#1a1008' },
+        { depth: 8, color: '#2a2010' },
+        { depth: 4, color: '#183018' },
+        { depth: 1, color: '#1a3818' },
+        { depth: 0, color: '#284828' },
+      ],
+      R.cameraX
+    );
+
+    // ── Decorations ──
+    const startTile = Math.floor(R.cameraX / 16) - 1;
+    const endTile = startTile + Math.ceil(W / 16) + 2;
+    for (let tile = startTile; tile <= endTile; tile++) {
+      const wx = tile * 16;
+      const screenX = wx - R.cameraX;
+      const terrainY = this.getTerrainHeight(wx);
+      const seed = R.hashTile(tile);
+      if (seed % 7 === 0) {
+        const tx = Math.floor(screenX), gy = Math.floor(terrainY);
+        R.drawRect(tx + 3, gy - 12, 2, 8, '#181008');
+        R.drawRect(tx, gy - 16, 8, 5, '#0c2010');
+        R.drawRect(tx + 1, gy - 18, 6, 3, '#0a1808');
+      } else if (seed % 5 === 0) {
+        R.drawRect(Math.floor(screenX), Math.floor(terrainY) - 3, 5, 3, '#0c2010');
+      }
+    }
+
+    // ── White Goat ──
+    const goatX = 100;
+    const goatTerrainY = this.getTerrainHeight(R.cameraX + goatX);
+    const bob = Math.sin(R.time * 10) * 0.5;
+    this.drawGoat(goatX, goatTerrainY - 15 + bob, R.frameIdx);
+
+    // ── Phase label + progress bar ──
+    const phaseColors = { 'INHALE': '#78d878', 'EXHALE': '#d8a878', 'HOLD': '#d8d878', 'SIP!': '#f0e068' };
+    const pCol = phaseColors[R.phase] || '#f8f8f0';
+    const engine = TimerEngine;
+    const chars = R.phase.toUpperCase();
+    const totalTextW = chars.length * 10;
+    let cx = Math.floor((W - totalTextW) / 2);
+    const textY = H - 20;
+    for (let c = 0; c < chars.length; c++) {
+      const glyph = R.FONT[chars[c]];
+      if (glyph) {
+        for (let row = 0; row < 5; row++) {
+          for (let col = 0; col < 4; col++) {
+            if (glyph[row] & (1 << (7 - col))) {
+              R.drawRect(cx + col * 2 + 1, textY + row * 2 + 1, 2, 2, '#000000');
+              R.drawRect(cx + col * 2, textY + row * 2, 2, 2, pCol);
+            }
+          }
+        }
+      }
+      cx += 10;
+    }
+    const barW = 80, barX = Math.floor((W - barW) / 2), barY = textY + 13;
+    R.drawRect(barX, barY, barW, 3, '#101020');
+    const progress = Math.min(1, engine.elapsed / engine.phaseDuration);
+    const fillW = Math.floor(progress * (barW - 2));
+    if (fillW > 0) R.drawRect(barX + 1, barY + 1, fillW, 1, pCol);
+  },
+
+  drawGoat(x, y, frameIdx) {
+    const R = RetroEngine;
+    const sx = Math.floor(x), sy = Math.floor(y);
+    const px = (lx, ly, col) => R.drawPixel(sx + lx, sy + ly, col);
+    const cW = '#f0f0e8', G = '#c8c8c0', D = '#808078', cH = '#e0d8b0', E = '#000000';
+
+    // Shadow
+    R.ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    R.ctx.fillRect(sx + 1, sy + 15, 13, 2);
+
+    // Horns
+    px(3, 0, cH); px(4, 0, cH); px(3, 1, cH);
+    // Head
+    px(2, 1, cW); px(3, 1, cW); px(4, 1, cW);
+    px(1, 2, cW); px(2, 2, cW); px(3, 2, cW); px(4, 2, cW); px(5, 2, cW);
+    px(1, 3, cW); px(2, 3, E); px(3, 3, cW); px(4, 3, cW); px(5, 3, cW);
+    px(0, 4, G); px(1, 4, cW); px(2, 4, cW); px(3, 4, cW); px(4, 4, cW);
+    px(0, 3, '#d8a0a0');
+    // Body
+    px(3, 5, cW); px(4, 5, cW); px(5, 5, cW); px(6, 5, cW);
+    px(4, 6, cW); px(5, 6, cW); px(6, 6, cW); px(7, 6, cW); px(8, 6, G);
+    px(4, 7, cW); px(5, 7, cW); px(6, 7, cW); px(7, 7, cW); px(8, 7, cW); px(9, 7, G);
+    px(4, 8, G); px(5, 8, cW); px(6, 8, cW); px(7, 8, cW); px(8, 8, cW); px(9, 8, cW); px(10, 8, G);
+    px(5, 9, G); px(6, 9, cW); px(7, 9, cW); px(8, 9, cW); px(9, 9, cW); px(10, 9, G);
+    px(5, 10, G); px(6, 10, cW); px(7, 10, cW); px(8, 10, cW); px(9, 10, G);
+    // Tail
+    const tailWag = Math.round(Math.sin(R.time * 4) * 1.5);
+    px(11 + tailWag, 7, G); px(12 + tailWag, 6, D);
+    // Legs
+    const legFrames = [
+      {far: [[[5,11],[5,12],[5,13],[5,14]], [[9,11],[9,12],[9,13],[9,14]]], near: [[[4,11],[3,12],[3,13],[3,14]], [[10,11],[10,12],[10,13],[10,14]]]},
+      {far: [[[5,11],[4,12],[4,13],[4,14]], [[8,11],[9,12],[9,13],[9,14]]], near: [[[5,11],[5,12],[5,13],[5,14]], [[8,11],[8,12],[8,13],[8,14]]]},
+      {far: [[[5,11],[5,12],[5,13],[5,14]], [[8,11],[8,12],[8,13],[8,14]]], near: [[[6,11],[6,12],[6,13],[6,14]], [[7,11],[7,12],[7,13],[7,14]]]},
+      {far: [[[5,11],[5,12],[5,13],[5,14]], [[9,11],[10,12],[10,13],[10,14]]], near: [[[4,11],[3,12],[2,13],[2,14]], [[9,11],[10,12],[11,13],[11,14]]]},
+    ][frameIdx % 4];
+    for (const leg of legFrames.far) { for (const [lx, ly] of leg) px(lx, ly, D); }
+    for (const leg of legFrames.near) { for (const [lx, ly] of leg) px(lx, ly, G); }
+  }
+};
+
+/* ── Workout Animation — Runner on intensity-driven terrain ── */
+const WorkoutAnim = {
+  TERRAIN_BASE_Y: 160,
+  TERRAIN_AMPLITUDE: 70,
+  particles: [],
+
+  // Y axis = rep cadence (4s up, 4s down) during work. Valley during rest.
+  REP_CYCLE: 8, // 4s concentric + 4s eccentric
+
+  getWorkFill(bTime) {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    if (!a) return 0;
+    const cycleDur = a.cycleDuration;
+    const phases = a.phases;
+    let t = ((bTime % cycleDur) + cycleDur) % cycleDur;
+    for (let i = 0; i < phases.length; i++) {
+      if (t < phases[i].duration) {
+        const name = phases[i].name;
+        if (name === 'REST' || name === 'BREAK') {
+          // Rest = low valley, gently settling
+          const progress = t / phases[i].duration;
+          return 0.1 * (1 - RetroEngine.smoothstep(progress));
+        }
+        // Work = pulsing reps: 4s up, 4s down (sine wave)
+        const repPhase = (t % this.REP_CYCLE) / this.REP_CYCLE;
+        return 0.5 + 0.5 * Math.sin(repPhase * Math.PI * 2 - Math.PI / 2);
+      }
+      t -= phases[i].duration;
+    }
+    return 0;
+  },
+
+  _phaseElapsed() {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    let elapsed = 0;
+    for (let i = 0; i < engine.phaseIdx; i++) elapsed += a.phases[i].duration;
+    elapsed += engine.elapsed;
+    return elapsed;
+  },
+
+  getTerrainHeight(worldX) {
+    const R = RetroEngine;
+    const pixelsPerSecond = 24;
+    const runnerWorldX = R.cameraX + 100;
+    const timeDelta = (worldX - runnerWorldX) / pixelsPerSecond;
+    const engine = TimerEngine;
+    const totalTime = (engine.cycleIdx * engine.activity.cycleDuration) + this._phaseElapsed();
+    const bTime = totalTime + timeDelta;
+    const fill = this.getWorkFill(bTime);
+    return this.TERRAIN_BASE_Y - fill * this.TERRAIN_AMPLITUDE;
+  },
+
+  getIntensityIdx() {
+    const engine = TimerEngine;
+    const phase = engine.activity?.phases[engine.phaseIdx];
+    if (!phase) return 0;
+    if (phase.name === 'REST' || phase.name === 'BREAK') return 0;
+    const progress = Math.min(1, engine.elapsed / phase.duration);
+    if (progress < 0.5) return 0;
+    if (progress < 0.75) return 1;
+    if (progress < 0.9) return 2;
+    return 3;
+  },
+
+  draw(dt) {
+    const R = RetroEngine;
+    const ctx = R.ctx;
+    const W = R.GW, H = R.GH;
+    const engine = TimerEngine;
+    const idx = this.getIntensityIdx();
+    const phase = engine.activity?.phases[engine.phaseIdx];
+    const phaseName = phase?.name || 'READY';
+    const isRest = phaseName === 'REST' || phaseName === 'BREAK';
+    const colors = ['#33ff33', '#ffff33', '#ff9933', '#ff3333'];
+    const color = isRest ? '#4488ff' : colors[idx];
+
+    R.cameraX += 24 * dt;
+
+    // Sky — bright daytime, shifts warm with intensity
+    const skyTopColors = [
+      [0x40, 0x88, 0xdd], // clear blue
+      [0x60, 0x88, 0xaa], // warming
+      [0x88, 0x70, 0x60], // orange haze
+      [0xa0, 0x50, 0x40], // red heat
+    ];
+    const skyBotColors = [
+      [0xb0, 0xd8, 0xf0], // light blue
+      [0xd0, 0xc8, 0xa0], // warm
+      [0xe0, 0xb0, 0x80], // orange
+      [0xe8, 0x90, 0x70], // red-orange
+    ];
+    const st = isRest ? [0x50, 0x90, 0xd0] : skyTopColors[idx];
+    const sb = isRest ? [0xa0, 0xc8, 0xe8] : skyBotColors[idx];
+    for (let y = 0; y < 80; y++) {
+      const t = y / 80;
+      ctx.fillStyle = `rgb(${Math.floor(R.lerp(st[0], sb[0], t))},${Math.floor(R.lerp(st[1], sb[1], t))},${Math.floor(R.lerp(st[2], sb[2], t))})`;
+      ctx.fillRect(0, y, W, 1);
+    }
+
+    // Far hills
+    const hillScroll = R.cameraX * 0.15;
+    for (let x = 0; x < W; x++) {
+      const wx = x + hillScroll;
+      const h = Math.sin(wx * 0.008) * 20 + Math.sin(wx * 0.015) * 12 + 25;
+      const top = 80 - h;
+      for (let y = Math.floor(top); y < 100; y++) {
+        R.drawPixel(x, y, isRest ? '#5878a0' : ['#4a7848', '#6a6838', '#7a5030', '#7a3028'][idx]);
+      }
+    }
+
+    // Main terrain — smooth path fill
+    const groundColors = ['#38a038', '#5a8a28', '#7a6020', '#7a3020'];
+    const gc = isRest ? '#3888b8' : groundColors[idx];
+    const topColors = ['#50c050', '#78a838', '#a08030', '#a04030'];
+    const tc = isRest ? '#50a0d0' : topColors[idx];
+    const deepColors = ['#287828', '#3a5818', '#584018', '#582018'];
+    const dc = isRest ? '#286898' : deepColors[idx];
+    const wSelf = this;
+    R.fillTerrain(
+      (wx) => wSelf.getTerrainHeight(wx),
+      [
+        { depth: 4, color: dc },
+        { depth: 1, color: gc },
+        { depth: 0, color: tc },
+      ],
+      R.cameraX
+    );
+
+    // Track markings on terrain
+    const startTile = Math.floor(R.cameraX / 16) - 1;
+    const endTile = startTile + Math.ceil(W / 16) + 2;
+    for (let tile = startTile; tile <= endTile; tile++) {
+      const wx = tile * 16;
+      const screenX = wx - R.cameraX;
+      const tY = this.getTerrainHeight(wx);
+      const seed = R.hashTile(tile);
+      // Distance markers
+      if (seed % 10 === 0) {
+        R.drawRect(Math.floor(screenX), Math.floor(tY) - 6, 1, 6, '#444');
+        R.drawRect(Math.floor(screenX) - 2, Math.floor(tY) - 6, 5, 1, '#444');
+      }
+    }
+
+    // Runner
+    const runnerX = 100;
+    const runnerTerrainY = this.getTerrainHeight(R.cameraX + runnerX);
+    const bob = Math.sin(R.time * 12) * (1 + idx * 0.5);
+    this.drawRunner(runnerX, runnerTerrainY - 20 + bob, R.frameIdx, idx, isRest);
+
+    // Flame particles
+    if (idx >= 2 && !isRest && Math.random() < idx * 4 * dt) {
+      this.particles.push({
+        x: runnerX + Math.random() * 8, y: runnerTerrainY - 6,
+        vx: -3 + Math.random() * 2, vy: -4 - Math.random() * 4,
+        life: 1 + Math.random(), maxLife: 1.5
+      });
+    }
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= 4 * dt; p.life -= dt;
+      if (p.life <= 0) { this.particles.splice(i, 1); continue; }
+      const alpha = p.life / p.maxLife;
+      ctx.fillStyle = `rgba(255,${Math.floor(80 * alpha)},0,${alpha * 0.6})`;
+      ctx.fillRect(Math.floor(p.x), Math.floor(p.y), 2, 2);
+    }
+    if (this.particles.length > 50) this.particles.length = 50;
+
+    // Screen edge pulse
+    if (idx === 3 && !isRest) {
+      const a = 0.12 + Math.sin(R.time * 4) * 0.08;
+      ctx.fillStyle = `rgba(255,50,50,${a})`;
+      ctx.fillRect(0, 0, W, 3); ctx.fillRect(0, H - 3, W, 3);
+      ctx.fillRect(0, 0, 3, H); ctx.fillRect(W - 3, 0, 3, H);
+    }
+
+    // Rep direction indicator (during work)
+    if (!isRest) {
+      const repPhase = (engine.elapsed % this.REP_CYCLE) / this.REP_CYCLE;
+      const isUp = repPhase < 0.5;
+      const repLabel = isUp ? 'UP' : 'DOWN';
+      const repColor = isUp ? '#44cc88' : '#cc8844';
+      const repCount = Math.floor(engine.elapsed / this.REP_CYCLE) + 1;
+      R.drawText('REP ' + repCount, W - 40, 8, '#666', null);
+      // Big UP/DOWN centered below phase
+      R.drawTextCentered(repLabel, 22, repColor, '#000');
+
+      // Adaptation window 40-60s — motivational cue
+      if (engine.elapsed >= 40) {
+        const msgs = [
+          'ADAPTATION ZONE',
+          'KEEP GOING',
+          'THIS IS WHERE IT COUNTS',
+          'HOLD ON',
+          'GROWTH IS HAPPENING',
+        ];
+        // Cycle through messages every 4s
+        const msgIdx = Math.floor((engine.elapsed - 40) / 4) % msgs.length;
+        const pulse = Math.sin(R.time * 3) > 0;
+        if (pulse) {
+          R.drawTextCentered(msgs[msgIdx], H - 34, '#ff6644', '#000');
+        }
+      }
+    }
+
+    // HUD — big phase name + countdown
+    const remaining = Math.max(0, (engine.phaseDuration || 0) - engine.elapsed);
+    const timeStr = formatTime(remaining);
+    // Double size text top center
+    const hudText = phaseName + ' ' + (isRest ? Math.ceil(remaining) : Math.ceil(engine.elapsed));
+    const textY = 6;
+    const chars = hudText.toUpperCase();
+    const totalTextW = chars.length * 10;
+    let cx = Math.floor((W - totalTextW) / 2);
+    for (let c = 0; c < chars.length; c++) {
+      const glyph = R.FONT[chars[c]];
+      if (glyph) {
+        for (let row = 0; row < 5; row++) {
+          for (let col = 0; col < 4; col++) {
+            if (glyph[row] & (1 << (7 - col))) {
+              R.drawRect(cx + col * 2 + 1, textY + row * 2 + 1, 2, 2, '#000');
+              R.drawRect(cx + col * 2, textY + row * 2, 2, 2, color);
+            }
+          }
+        }
+      }
+      cx += 10;
+    }
+
+    // Zone progress bar at bottom
+    const barX = 30, barW = W - 60, barY = H - 16, barH = 6;
+    R.drawRect(barX, barY, barW, barH, '#111');
+    const progress = Math.min(1, engine.elapsed / (engine.phaseDuration || 1));
+    const fillW = Math.floor(progress * barW);
+    if (fillW > 0) R.drawRect(barX, barY + 1, fillW, barH - 2, color);
+    // Cycle counter
+    R.drawText('SET ' + (engine.cycleIdx + 1), barX, barY - 8, '#666', null);
+  },
+
+  drawRunner(x, y, frameIdx, idx, isRest) {
+    const R = RetroEngine;
+    const S = 2; // sprite scale
+    const sx = Math.floor(x), sy = Math.floor(y);
+    const jitter = !isRest && idx >= 2 ? (Math.random() - 0.5) * idx : 0;
+    const px = (lx, ly, col) => R.drawRect(sx + lx * S + jitter, sy + ly * S, S, S, col);
+
+    if (isRest) {
+      // Resting pose — seated, drinking water
+      const skin = 'rgb(220,180,140)';
+      px(3, 0, '#332211'); px(4, 0, '#332211'); px(5, 0, '#332211');
+      px(3, 1, skin); px(4, 1, skin); px(5, 1, skin);
+      px(3, 2, skin); px(4, 2, skin); px(5, 2, skin);
+      px(3, 1, '#000'); px(5, 1, '#000');
+      px(4, 2, '#000'); // smile
+      px(3, 3, '#4466aa'); px(4, 3, '#4466aa'); px(5, 3, '#4466aa');
+      px(2, 4, '#4466aa'); px(3, 4, '#4466aa'); px(4, 4, '#4466aa'); px(5, 4, '#4466aa'); px(6, 4, '#4466aa');
+      px(1, 4, skin); px(7, 4, skin); // arms at sides
+      // Water bottle
+      if (Math.floor(R.time * 2) % 3 !== 0) { px(7, 3, '#3399ff'); px(7, 2, '#aaddff'); }
+      // Seated legs
+      px(3, 5, '#333355'); px(5, 5, '#333355');
+      px(2, 6, skin); px(3, 6, skin); px(5, 6, skin); px(6, 6, skin);
+      px(2, 7, '#222'); px(6, 7, '#222');
+      return;
+    }
+
+    const skinR = [220, 230, 240, 255][idx];
+    const skinG = [180, 160, 130, 80][idx];
+    const skinB = [140, 120, 90, 70][idx];
+    const skin = `rgb(${skinR},${skinG},${skinB})`;
+    const shirt = ['#4466aa', '#6666aa', '#aa6633', '#aa3333'][idx];
+
+    // Shadow
+    R.ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    R.ctx.fillRect(sx, sy + 10 * S, 9 * S, 2);
+
+    // Head
+    px(3, 0, '#332211'); px(4, 0, '#332211'); px(5, 0, '#332211');
+    px(3, 1, skin); px(4, 1, skin); px(5, 1, skin);
+    px(3, 2, skin); px(4, 2, skin); px(5, 2, skin);
+    px(3, 1, '#000'); px(5, 1, '#000');
+    if (idx >= 2) { px(3, 2, '#000'); px(4, 2, '#000'); px(5, 2, '#000'); }
+
+    // Body
+    px(3, 3, shirt); px(4, 3, shirt); px(5, 3, shirt);
+    px(2, 4, shirt); px(3, 4, shirt); px(4, 4, shirt); px(5, 4, shirt); px(6, 4, shirt);
+    px(2, 5, shirt); px(3, 5, shirt); px(4, 5, shirt); px(5, 5, shirt); px(6, 5, shirt);
+
+    // Arms pumping
+    const af = frameIdx % 4;
+    if (af === 0 || af === 2) { px(1, 4, skin); px(7, 3, skin); }
+    else { px(1, 3, skin); px(7, 4, skin); }
+
+    // Legs
+    const legs = [
+      { fl: [[3,6],[2,7],[2,8]], bl: [[5,6],[6,7],[6,8]] },
+      { fl: [[3,6],[3,7],[3,8]], bl: [[5,6],[5,7],[5,8]] },
+      { fl: [[3,6],[4,7],[5,8]], bl: [[5,6],[4,7],[3,8]] },
+      { fl: [[4,6],[4,7],[4,8]], bl: [[4,6],[4,7],[4,8]] },
+    ][frameIdx % 4];
+    for (const [lx, ly] of legs.bl) px(lx, ly, '#333355');
+    for (const [lx, ly] of legs.fl) px(lx, ly, '#444466');
+    px(legs.fl[2][0], legs.fl[2][1] + 1, '#222');
+    px(legs.bl[2][0], legs.bl[2][1] + 1, '#222');
+
+    // Sweat
+    if (idx >= 1) {
+      for (let d = 0; d < idx; d++) {
+        const df = (R.frameIdx + d * 17) % 20;
+        if (df < 12) px(2 + d * 3, Math.floor(df * 0.4), '#aaddff');
+      }
+    }
+  }
+};
+
+/* ── Skyline Animation (Buildings light up with breath) ── */
+const SkylineAnim = {
+  buildings: null,
+  windows: null,
+  stars: null,
+
+  _buildScene() {
+    const W = 384, H = 216;
+    const groundY = H - 20;
+    // Chicago-inspired dense skyline
+    const bldDefs = [
+      {x:10,  w:16, h:50}, {x:28,  w:14, h:65}, {x:44,  w:12, h:85},
+      {x:58,  w:18, h:70}, {x:78,  w:14, h:60}, {x:94,  w:16, h:75},
+      {x:112, w:12, h:95}, {x:126, w:18, h:80}, {x:146, w:14, h:70},
+      {x:162, w:16, h:110}, // hero tower
+      {x:180, w:14, h:90}, {x:196, w:18, h:75}, {x:216, w:14, h:85},
+      {x:232, w:16, h:70}, {x:250, w:12, h:60}, {x:264, w:18, h:80},
+      {x:284, w:14, h:65}, {x:300, w:16, h:55}, {x:318, w:14, h:45},
+      {x:334, w:18, h:50}, {x:354, w:14, h:40},
+    ];
+    this.buildings = bldDefs.map(b => ({
+      x: b.x, w: b.w, h: b.h, y: groundY - b.h,
+      color: `rgb(${25 + Math.floor(Math.random()*12)},${25 + Math.floor(Math.random()*10)},${30 + Math.floor(Math.random()*10)})`
+    }));
+    // Generate windows for each building
+    this.windows = [];
+    for (const b of this.buildings) {
+      const cols = Math.max(2, Math.floor(b.w / 6));
+      const rows = Math.max(3, Math.floor(b.h / 8));
+      const gapX = (b.w - cols * 3) / (cols + 1);
+      const gapY = (b.h - rows * 4) / (rows + 1);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const wx = b.x + gapX + c * (3 + gapX);
+          const wy = b.y + gapY + r * (4 + gapY);
+          // Wave: bottom-up — mapped to 0.1..1.0 so nothing lights at zero fill
+          const wave = 0.10 + ((rows - 1 - r) / rows) * 0.90;
+          this.windows.push({x: Math.floor(wx), y: Math.floor(wy), wave});
+        }
+      }
+    }
+    // Stars
+    this.stars = [];
+    for (let i = 0; i < 60; i++) {
+      this.stars.push({x: Math.floor(Math.random() * W), y: Math.floor(Math.random() * 80), phase: Math.random() * Math.PI * 2});
+    }
+  },
+
+  draw(dt) {
+    const R = RetroEngine;
+    const ctx = R.ctx;
+    const W = R.GW, H = R.GH;
+
+    if (!this.buildings) this._buildScene();
+
+    // Night sky gradient
+    for (let y = 0; y < 100; y++) {
+      const t = y / 100;
+      const r = Math.floor(R.lerp(0x08, 0x18, t));
+      const g = Math.floor(R.lerp(0x08, 0x14, t));
+      const b = Math.floor(R.lerp(0x18, 0x28, t));
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(0, y, W, 1);
+    }
+    // Lower sky
+    for (let y = 100; y < H; y++) {
+      ctx.fillStyle = '#0a0a14';
+      ctx.fillRect(0, y, W, 1);
+    }
+
+    // Stars
+    for (const s of this.stars) {
+      const twinkle = Math.sin(R.time * 1.5 + s.phase) * 0.3 + 0.5;
+      ctx.globalAlpha = twinkle;
+      R.drawPixel(s.x, s.y, '#c8c0b0');
+    }
+    ctx.globalAlpha = 1;
+
+    // Buildings (dark silhouettes)
+    for (const b of this.buildings) {
+      ctx.fillStyle = b.color;
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      // Roof line highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      ctx.fillRect(b.x, b.y, b.w, 1);
+    }
+
+    // Ground
+    ctx.fillStyle = '#1a1a20';
+    ctx.fillRect(0, H - 20, W, 20);
+
+    // Windows — light up based on breath fill
+    const fill = R.breathFill;
+    for (const w of this.windows) {
+      const lit = fill >= w.wave;
+      if (lit) {
+        const warmth = Math.sin(R.time * 0.5 + w.x * 0.1 + w.y * 0.2);
+        const r = warmth > 0 ? 255 : 220;
+        const g = warmth > 0 ? 220 : 180;
+        const b = warmth > 0 ? 120 : 100;
+        ctx.globalAlpha = 0.7 + warmth * 0.15;
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+      } else {
+        ctx.globalAlpha = 0.08;
+        ctx.fillStyle = '#404060';
+      }
+      ctx.fillRect(w.x, w.y, 3, 4);
+    }
+    ctx.globalAlpha = 1;
+
+    // Reflection on ground
+    ctx.globalAlpha = 0.1;
+    for (const b of this.buildings) {
+      ctx.fillStyle = fill > 0.3 ? '#ffd870' : '#202030';
+      ctx.fillRect(b.x + 2, H - 18, b.w - 4, 8);
+    }
+    ctx.globalAlpha = 1;
+
+    // HUD
+    const phaseColors = { 'INHALE': '#78d878', 'EXHALE': '#d8a878', 'HOLD': '#d8d878', 'SIP!': '#f0e068' };
+    R.drawTextCentered(R.phase, 8, phaseColors[R.phase] || '#f8f8f0', '#000000');
+
+    // Breath meter
+    const mx = W - 10, my = 20, mh = 50;
+    R.drawRect(mx, my, 4, mh, '#000000');
+    const fillH = Math.floor(fill * mh);
+    if (fillH > 0) R.drawRect(mx, my + mh - fillH, 4, fillH, '#ffd870');
+  }
+};
+
+/* ── Dog Walk Animation (Physiological Sigh default) ── */
+const DogAnim = {
+  TERRAIN_BASE_Y: 175,
+  TERRAIN_AMPLITUDE: 120,
+
+  getBreathFillAtTime(bTime) {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    if (!a) return 0;
+    const cycleDur = a.cycleDuration;
+    const phases = a.phases;
+    let t = ((bTime % cycleDur) + cycleDur) % cycleDur;
+    for (let i = 0; i < phases.length; i++) {
+      if (t < phases[i].duration) {
+        const progress = t / phases[i].duration;
+        if (phases[i].fillStart !== undefined) {
+          return phases[i].fillStart + (phases[i].fillEnd - phases[i].fillStart) * RetroEngine.smoothstep(progress);
+        }
+        return 0;
+      }
+      t -= phases[i].duration;
+    }
+    return 0;
+  },
+
+  _phaseElapsed() {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    let elapsed = 0;
+    for (let i = 0; i < engine.phaseIdx; i++) {
+      elapsed += a.phases[i].duration;
+    }
+    elapsed += engine.elapsed;
+    return elapsed;
+  },
+
+  getTerrainHeight(worldX) {
+    const R = RetroEngine;
+    const pixelsPerSecond = 20;
+    const playerWorldX = R.cameraX + 80;
+    const timeDelta = (worldX - playerWorldX) / pixelsPerSecond;
+    const engine = TimerEngine;
+    const totalBreathTime = (engine.cycleIdx * engine.activity.cycleDuration) + this._phaseElapsed();
+    const bTime = totalBreathTime + timeDelta;
+    const fill = this.getBreathFillAtTime(bTime);
+    return this.TERRAIN_BASE_Y - fill * this.TERRAIN_AMPLITUDE;
+  },
+
+  draw(dt) {
+    const R = RetroEngine;
+    const ctx = R.ctx;
+    const W = R.GW, H = R.GH;
+
+    R.cameraX += 20 * dt;
+
+    // Blue sky
+    for (let y = 0; y < 90; y++) {
+      const t = y / 90;
+      const r = Math.floor(R.lerp(0x50, 0xa0, t));
+      const g = Math.floor(R.lerp(0x90, 0xd0, t));
+      const b = Math.floor(R.lerp(0xe0, 0xf0, t));
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(0, y, W, 1);
+    }
+
+    // Clouds (parallax, slow)
+    const cloudScroll = R.cameraX * 0.04;
+    const clouds = [
+      {ox: 40, y: 20, w: 30, h: 6},
+      {ox: 150, y: 30, w: 22, h: 5},
+      {ox: 260, y: 15, w: 28, h: 7},
+      {ox: 370, y: 25, w: 20, h: 5},
+    ];
+    for (const cl of clouds) {
+      const cx = ((cl.ox - cloudScroll) % (W + 60) + W + 60) % (W + 60) - 30;
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillRect(Math.floor(cx), cl.y, cl.w, cl.h - 2);
+      ctx.fillRect(Math.floor(cx) + 3, cl.y - 2, cl.w - 6, cl.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.fillRect(Math.floor(cx) + Math.floor(cl.w * 0.2), cl.y - 3, Math.floor(cl.w * 0.4), 3);
+    }
+
+    // Far hills (muted blue-purple, parallax)
+    const hillScroll = R.cameraX * 0.12;
+    for (let x = 0; x < W; x++) {
+      const wx = x + hillScroll;
+      const h = Math.sin(wx * 0.007) * 18 + Math.sin(wx * 0.013) * 10 + 28;
+      const top = 95 - h;
+      for (let y = Math.floor(top); y < 95; y++) {
+        R.drawPixel(x, y, y < top + 2 ? '#8a9aaa' : '#7a8a9a');
+      }
+    }
+
+    // Mid hills (dusty sage, parallax) — fill to bottom to prevent black gaps
+    const midScroll = R.cameraX * 0.25;
+    for (let x = 0; x < W; x++) {
+      const wx = x + midScroll;
+      const h = Math.sin(wx * 0.01) * 14 + Math.sin(wx * 0.022) * 8 + 22;
+      const top = 108 - h;
+      for (let y = Math.floor(top); y < H; y++) {
+        R.drawPixel(x, y, y < top + 2 ? '#7a9a6a' : '#6a8a5a');
+      }
+    }
+
+    // Terrain — warm earthy green
+    R.fillTerrain(
+      (wx) => this.getTerrainHeight(wx),
+      [
+        { depth: 8, color: '#3a5a2a' },
+        { depth: 4, color: '#4a6a30' },
+        { depth: 0, color: '#5a7a38' },
+      ],
+      R.cameraX
+    );
+
+    // Dog sprite
+    const engine = TimerEngine;
+    const playerX = 80;
+    const playerTerrainY = this.getTerrainHeight(R.cameraX + playerX);
+    const bob = Math.sin(R.time * 10) * 0.5;
+    const idle = engine.state === 'PAUSED';
+    this.drawDog(playerX, playerTerrainY - 15 + bob, R.frameIdx, idle);
+  },
+
+  drawDog(x, y, frameIdx, idle) {
+    const R = RetroEngine;
+    const sx = Math.floor(x), sy = Math.floor(y);
+    const px = (lx, ly, col) => R.drawPixel(sx + lx, sy + ly, col);
+    const G = '#d8a840', dG = '#b88828', W = '#f0f0e8', pT = '#f08888';
+
+    // Shadow
+    R.ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    R.ctx.fillRect(sx + 1, sy + 15, 13, 2);
+
+    const headOff = idle ? (Math.sin(R.time * 2.5) > 0.6 ? -1 : 0) : 0;
+    const tailWag = Math.round(Math.sin(R.time * (idle ? 5 : 8)) * 2);
+    const earBounce = (!idle && frameIdx % 2 === 0) ? 1 : 0;
+    const showTongue = idle ? (Math.sin(R.time * 3) > 0) : true;
+
+    // Head
+    px(2, 1 + headOff, G); px(3, 1 + headOff, G); px(4, 1 + headOff, G); px(5, 1 + headOff, G);
+    px(1, 2 + headOff, G); px(2, 2 + headOff, G); px(3, 2 + headOff, G); px(4, 2 + headOff, G); px(5, 2 + headOff, G); px(6, 2 + headOff, G);
+    px(1, 3 + headOff, G); px(2, 3 + headOff, G); px(3, 3 + headOff, G); px(4, 3 + headOff, G); px(5, 3 + headOff, G); px(6, 3 + headOff, G);
+    px(1, 4 + headOff, G); px(2, 4 + headOff, G); px(3, 4 + headOff, G); px(4, 4 + headOff, G); px(5, 4 + headOff, G); px(6, 4 + headOff, G);
+
+    // Floppy ears
+    px(0, 2 + headOff + earBounce, dG); px(0, 3 + headOff + earBounce, dG); px(0, 4 + headOff + earBounce, dG);
+    px(7, 2 + headOff + earBounce, dG); px(7, 3 + headOff + earBounce, dG); px(7, 4 + headOff + earBounce, dG);
+
+    // Eyes
+    px(2, 2 + headOff, '#604020'); px(2, 3 + headOff, '#402810');
+    px(5, 2 + headOff, '#604020'); px(5, 3 + headOff, '#402810');
+    px(2, 2 + headOff, '#a08050'); px(5, 2 + headOff, '#a08050');
+
+    // Snout + nose
+    px(3, 4 + headOff, '#e8c060'); px(4, 4 + headOff, '#e8c060');
+    px(3, 5 + headOff, '#202020'); px(4, 5 + headOff, '#202020');
+    px(3, 5 + headOff, '#404040');
+    px(2, 5 + headOff, G); px(5, 5 + headOff, G);
+
+    // Tongue
+    if (showTongue) {
+      const tongueOff = (!idle && frameIdx % 2 === 0) ? 1 : 0;
+      px(3, 6 + headOff + tongueOff, pT);
+      px(4, 6 + headOff + tongueOff, pT);
+    }
+
+    // Body
+    px(4, 6, G); px(5, 6, G); px(6, 6, G);
+    px(3, 7, G); px(4, 7, G); px(5, 7, W); px(6, 7, W); px(7, 7, G); px(8, 7, G);
+    px(3, 8, G); px(4, 8, G); px(5, 8, W); px(6, 8, W); px(7, 8, G); px(8, 8, G); px(9, 8, dG);
+    px(4, 9, dG); px(5, 9, G); px(6, 9, G); px(7, 9, G); px(8, 9, G); px(9, 9, dG);
+    px(5, 10, dG); px(6, 10, G); px(7, 10, G); px(8, 10, dG);
+
+    // Fluffy tail
+    px(10 + tailWag, 7, G); px(11 + tailWag, 6, G); px(12 + tailWag, 5, G);
+    px(11 + tailWag, 7, dG); px(12 + tailWag, 6, dG);
+
+    // Legs
+    const legFrames = [
+      {far: [[[5,11],[5,12],[5,13],[5,14]], [[8,11],[8,12],[8,13],[8,14]]], near: [[[4,11],[3,12],[3,13],[3,14]], [[9,11],[9,12],[9,13],[9,14]]]},
+      {far: [[[4,11],[4,12],[4,13],[4,14]], [[8,11],[8,12],[8,13],[8,14]]], near: [[[5,11],[5,12],[5,13],[5,14]], [[7,11],[7,12],[7,13],[7,14]]]},
+      {far: [[[5,11],[5,12],[5,13],[5,14]], [[7,11],[7,12],[7,13],[7,14]]], near: [[[5,11],[6,12],[6,13],[6,14]], [[8,11],[7,12],[7,13],[7,14]]]},
+      {far: [[[5,11],[5,12],[5,13],[5,14]], [[8,11],[9,12],[9,13],[9,14]]], near: [[[4,11],[3,12],[2,13],[2,14]], [[9,11],[10,12],[10,13],[10,14]]]},
+    ][frameIdx % 4];
+    for (const leg of legFrames.far) {
+      for (const [lx, ly] of leg) px(lx, ly, dG);
+      px(leg[leg.length-1][0], leg[leg.length-1][1], '#a07828');
+    }
+    for (const leg of legFrames.near) {
+      for (const [lx, ly] of leg) px(lx, ly, G);
+      px(leg[leg.length-1][0], leg[leg.length-1][1], '#c09030');
+    }
+  }
+};
+
+/* ── Soccer Sidescroll Animation (Dribbler) ── */
+const SidescrollAnim = {
+  PAL: {
+    stadiumRoof: '#505058', stadiumBody: '#606068',
+    crowd1: '#c04040', crowd2: '#4040c0', crowd3: '#c0c040', crowd4: '#40c040', crowd5: '#c06020',
+    grass1: '#30a030', grass2: '#28882a', grass3: '#38b838', grassDk: '#208020',
+    lineWhite: '#e8e8e0',
+    jersey: '#2060c0', jerseyDk: '#184898',
+    shorts: '#f0f0e8', skin: '#e8b878', skinDk: '#c89858', hair: '#282828',
+    ballWhite: '#f0f0e8', ballBlack: '#282828',
+    uiText: '#f8f8f0', uiShadow: '#000000', uiAccent: '#ffd830',
+  },
+
+  TERRAIN_BASE_Y: 160,
+  TERRAIN_AMPLITUDE: 70,
+
+  getBreathFillAtTime(bTime) {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    if (!a) return 0;
+    const cycleDur = a.cycleDuration;
+    const phases = a.phases;
+    let t = ((bTime % cycleDur) + cycleDur) % cycleDur;
+    for (let i = 0; i < phases.length; i++) {
+      if (t < phases[i].duration) {
+        const progress = t / phases[i].duration;
+        if (phases[i].fillStart !== undefined) {
+          return phases[i].fillStart + (phases[i].fillEnd - phases[i].fillStart) * RetroEngine.smoothstep(progress);
+        }
+        return 0;
+      }
+      t -= phases[i].duration;
+    }
+    return 0;
+  },
+
+  _phaseElapsed() {
+    const engine = TimerEngine;
+    const a = engine.activity;
+    let elapsed = 0;
+    for (let i = 0; i < engine.phaseIdx; i++) {
+      elapsed += a.phases[i].duration;
+    }
+    elapsed += engine.elapsed;
+    return elapsed;
+  },
+
+  getTerrainHeight(worldX) {
+    const R = RetroEngine;
+    const pixelsPerSecond = 20;
+    const playerWorldX = R.cameraX + 80;
+    const timeDelta = (worldX - playerWorldX) / pixelsPerSecond;
+    const engine = TimerEngine;
+    const totalBreathTime = (engine.cycleIdx * engine.activity.cycleDuration) + this._phaseElapsed();
+    const bTime = totalBreathTime + timeDelta;
+    const fill = this.getBreathFillAtTime(bTime);
+    return this.TERRAIN_BASE_Y - fill * this.TERRAIN_AMPLITUDE;
+  },
+
+  draw(dt) {
+    const R = RetroEngine;
+    const ctx = R.ctx;
+    const W = R.GW, H = R.GH;
+    const PAL = this.PAL;
+
+    R.cameraX += 20 * dt;
+
+    // Sky
+    for (let y = 0; y < 60; y++) {
+      const t = y / 60;
+      ctx.fillStyle = `rgb(${Math.floor(R.lerp(0x60, 0xd0, t))},${Math.floor(R.lerp(0xa8, 0xe8, t))},${Math.floor(R.lerp(0xe8, 0xf8, t))})`;
+      ctx.fillRect(0, y, W, 1);
+    }
+
+    // Stadium background
+    const stadScroll = R.cameraX * 0.08;
+    for (let x = 0; x < W; x++) {
+      const wx = x + stadScroll;
+      const roofH = 8 + Math.sin(wx * 0.015) * 4;
+      const roofTop = 52 - roofH;
+      for (let y = Math.floor(roofTop); y < 52; y++) {
+        R.drawPixel(x, y, y < roofTop + 2 ? PAL.stadiumRoof : PAL.stadiumBody);
+      }
+      // Crowd
+      for (let y = 52; y < 68; y++) {
+        const seed = R.hashTile(Math.floor(wx * 3 + y * 7));
+        const colors = [PAL.crowd1, PAL.crowd2, PAL.crowd3, PAL.crowd4, PAL.crowd5];
+        R.drawPixel(x, y, colors[seed % 5]);
+      }
+    }
+
+    // Pitch terrain — outline only
+    const self = this;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x++) {
+      const wx = x + R.cameraX;
+      const ty = self.getTerrainHeight(wx);
+      if (x === 0) ctx.moveTo(x, ty);
+      else ctx.lineTo(x, ty);
+    }
+    ctx.strokeStyle = PAL.grass3;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // Subtle fill below the line
+    ctx.lineTo(W, H);
+    ctx.lineTo(0, H);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(48, 160, 48, 0.08)';
+    ctx.fill();
+
+    // Breath phase flags — placed at exact phase transition points
+    const pixelsPerSec = 20;
+    const engine = TimerEngine;
+    const a = engine.activity;
+    if (a && a.phases) {
+      const cyclePx = a.cycleDuration * pixelsPerSec;
+      const playerWorldX = R.cameraX + 80;
+      const totalBreathTime = (engine.cycleIdx * a.cycleDuration) + this._phaseElapsed();
+      // Find the world-X origin of the current cycle
+      const cycleStartTime = engine.cycleIdx * a.cycleDuration;
+      const cycleStartWorldX = playerWorldX - (totalBreathTime - cycleStartTime) * pixelsPerSec;
+
+      // Draw flags for several cycles around the visible area
+      for (let c = -2; c <= 4; c++) {
+        const baseWX = cycleStartWorldX + c * cyclePx;
+        let phaseOffset = 0;
+        for (let i = 0; i < a.phases.length; i++) {
+          const phase = a.phases[i];
+          const flagWorldX = baseWX + phaseOffset * pixelsPerSec;
+          const flagScreenX = Math.floor(flagWorldX - R.cameraX);
+          if (flagScreenX >= -10 && flagScreenX <= W + 10) {
+            const flagTerrainY = this.getTerrainHeight(flagWorldX);
+            const fx = flagScreenX, fy = Math.floor(flagTerrainY);
+            const isInhale = phase.name === 'INHALE';
+            const flagColor = isInhale ? '#78d878' : '#d8a878';
+            // Flag pole
+            R.drawRect(fx, fy - 12, 1, 12, PAL.lineWhite);
+            // Flag pennant
+            R.drawRect(fx + 1, fy - 12, 4, 3, flagColor);
+          }
+          phaseOffset += phase.duration;
+        }
+      }
+    }
+
+    // Player
+    const playerX = 80;
+    const playerTerrainY = this.getTerrainHeight(R.cameraX + playerX);
+    const bob = Math.sin(R.time * 10) * 0.5;
+    this.drawSoccerPlayer(playerX, playerTerrainY - 15 + bob, R.frameIdx);
+
+    // Ball at feet
+    const ballOffX = playerX + 8;
+    const ballBob = Math.sin(R.time * 8) * 1;
+    const ballOffY = playerTerrainY - 4 + ballBob;
+    R.drawPixel(ballOffX, ballOffY, PAL.ballWhite);
+    R.drawPixel(ballOffX + 1, ballOffY, PAL.ballWhite);
+    R.drawPixel(ballOffX, ballOffY + 1, PAL.ballWhite);
+    R.drawPixel(ballOffX + 1, ballOffY + 1, PAL.ballBlack);
+
+    // HUD
+    const phaseColors = { 'INHALE': '#78d878', 'EXHALE': '#d8a878', 'HOLD': '#d8d878', 'SIP!': '#f0e068' };
+    R.drawTextCentered(R.phase, 8, phaseColors[R.phase] || PAL.uiText, PAL.uiShadow);
+
+    // Breath meter
+    const mx = W - 10, my = 20, mh = 50;
+    R.drawRect(mx, my, 4, mh, '#000000');
+    const fillH = Math.floor(R.breathFill * mh);
+    if (fillH > 0) R.drawRect(mx, my + mh - fillH, 4, fillH, '#78d878');
+  },
+
+  drawSoccerPlayer(x, y, frameIdx) {
+    const R = RetroEngine;
+    const sx = Math.floor(x), sy = Math.floor(y);
+    const px = (lx, ly, col) => R.drawPixel(sx + lx, sy + ly, col);
+    const P = this.PAL;
+
+    R.ctx.fillStyle = 'rgba(0,0,0,0.18)';
+    R.ctx.fillRect(sx + 2, sy + 15, 12, 2);
+
+    // Hair
+    px(3, 0, P.hair); px(4, 0, P.hair); px(5, 0, P.hair);
+    px(2, 0, P.hair); px(6, 0, P.hair);
+    px(2, -1, P.hair); px(5, -1, P.hair);
+    px(2, 1, P.hair); px(3, 1, P.hair); px(4, 1, P.hair); px(5, 1, P.hair); px(6, 1, P.hair);
+    // Face
+    px(2, 2, P.skin); px(3, 2, P.skin); px(4, 2, P.skin); px(5, 2, P.skin); px(6, 2, P.skin);
+    px(1, 3, P.skin); px(2, 3, P.skin); px(3, 3, '#202020'); px(4, 3, P.skin); px(5, 3, '#202020'); px(6, 3, P.skin); px(7, 3, P.skin);
+    px(1, 4, P.skin); px(2, 4, P.skin); px(3, 4, P.skin); px(4, 4, P.skinDk); px(5, 4, P.skin); px(6, 4, P.skin); px(7, 4, P.skin);
+    px(2, 5, P.skin); px(3, 5, P.skin); px(4, 5, P.skin); px(5, 5, P.skin); px(6, 5, P.skin);
+    // Jersey
+    px(3, 6, P.jersey); px(4, 6, P.jersey); px(5, 6, P.jersey);
+    px(4, 6, '#e8e8e0');
+    px(2, 7, P.jersey); px(3, 7, P.jersey); px(4, 7, P.jersey); px(5, 7, P.jersey); px(6, 7, P.jersey);
+    px(2, 8, P.jerseyDk); px(3, 8, P.jersey); px(4, 8, P.jersey); px(5, 8, P.jersey); px(6, 8, P.jerseyDk);
+    // Arms
+    const armFrame = frameIdx % 4;
+    if (armFrame === 0 || armFrame === 2) {
+      px(1, 7, P.skin); px(1, 8, P.skin); px(7, 7, P.skin); px(7, 6, P.skin);
+    } else {
+      px(1, 6, P.skin); px(1, 7, P.skin); px(7, 7, P.skin); px(7, 8, P.skin);
+    }
+    // Shorts
+    px(3, 9, P.shorts); px(4, 9, P.shorts); px(5, 9, P.shorts);
+    px(3, 10, P.shorts); px(4, 10, P.shorts); px(5, 10, P.shorts);
+    // Legs
+    const legFrames = [
+      { fl: [[3,11],[2,12],[2,13],[2,14]], bl: [[5,11],[6,12],[6,13],[6,14]] },
+      { fl: [[3,11],[3,12],[3,13],[3,14]], bl: [[5,11],[5,12],[5,13],[5,14]] },
+      { fl: [[3,11],[4,12],[5,13],[5,14]], bl: [[5,11],[4,12],[3,13],[3,14]] },
+      { fl: [[4,11],[4,12],[4,13],[4,14]], bl: [[4,11],[4,12],[4,13],[4,14]] },
+    ][frameIdx % 4];
+    for (const [lx, ly] of legFrames.bl) {
+      px(lx, ly, ly <= 11 ? P.skinDk : (ly <= 13 ? P.jerseyDk : '#181818'));
+    }
+    for (const [lx, ly] of legFrames.fl) {
+      px(lx, ly, ly <= 11 ? P.skin : (ly <= 13 ? P.jersey : '#282828'));
+    }
+  }
+};
+
+/* ═══════════════════════════════════════════
+   6. DECK VIEW
+   ═══════════════════════════════════════════ */
+const DeckView = {
+  queue: [],
+  playlistMode: false,
+
+  render() {
+    const el = document.getElementById('view-deck');
+    const pm = this.playlistMode;
+
+    const protoEmoji = { physio_sigh: '🫁', coherence: '🌊', box: '⬜', b478: '💤' };
+    const protoHint = {
+      box: '4-4-4-4 · nose only',
+      coherence: '5.5 in · 5.5 out · nose only',
+      b478: '4 in · 7 hold · 8 out',
+      physio_sigh: 'inhale · sip · long exhale',
+    };
+    let html = '';
+
+    // Playlist queue bar (shown when playlist mode active)
+    if (pm) {
+      html += '<div style="width:min(95vw,960px);margin-bottom:8px;padding:8px 12px;background:#1a1a1a;border-radius:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:40px">';
+      if (!this.queue.length) {
+        html += '<span style="color:#444;font-size:11px">Tap buttons to build playlist...</span>';
+      } else {
+        this.queue.forEach((item, i) => {
+          html += `<span class="q-remove" data-qi="${i}" style="padding:3px 8px;background:#222;border-radius:4px;font-size:11px;color:#ccc;cursor:pointer;border:1px solid #333">${item.name} ✕</span>`;
+        });
+      }
+      html += '<div style="margin-left:auto;display:flex;gap:6px">';
+      if (this.queue.length) {
+        html += '<button class="btn-primary" id="pl-go" style="padding:4px 14px;font-size:11px">Play (' + this.queue.length + ')</button>';
+        html += '<button id="pl-clear" style="padding:4px 10px;font-size:11px;background:#222;border:1px solid #333;border-radius:4px;color:#888;cursor:pointer">Clear</button>';
+      }
+      html += '</div></div>';
+    }
+
+    html += '<div class="deck-grid">';
+    // Row 1: breathing protocols
+    for (const id of Object.keys(PROTOCOLS)) {
+      html += `<div class="tile" data-category="breathing" data-id="${id}">
+        <div style="font-size:36px">${protoEmoji[id] || '⏱'}</div>
+        <div class="label">${PROTOCOLS[id].name}</div>
+        <div style="font-size:11px;color:#aaa;text-align:center;line-height:1.3;margin-top:3px">${protoHint[id] || ''}</div>
+      </div>`;
+    }
+    // Playlist button
+    html += `<div class="tile" id="playlist-mode-btn" style="background:${pm ? '#1a2a1a' : '#111'}">
+      <div style="font-size:36px">${pm ? '✅' : '📋'}</div>
+      <div class="label">${pm ? 'Done' : 'Playlist'}</div>
+    </div>`;
+    // Row 2-3: Routine tiles (same grid)
+    for (const r of ROUTINE_LIBRARY) {
+      html += `<div class="tile routine-tile" data-rid="${r.id}" data-category="stretching">
+        <div style="font-size:28px">${r.icon}</div>
+        <div class="label">${r.name}</div>
+        <div style="font-size:11px;color:#aaa;text-align:center;line-height:1.3;margin-top:3px">${r.duration}</div>
+      </div>`;
+    }
+    html += '</div>';
+
+    el.innerHTML = html;
+
+    // Breathing tiles — launch or queue
+    el.querySelectorAll('.tile[data-id]').forEach(tile => {
+      tile.addEventListener('click', () => {
+        const activity = createActivity(tile.dataset.id, { cycles: pm ? 1 : undefined });
+        if (!activity) return;
+        if (pm) {
+          this.queue.push(activity);
+          this.render();
+        } else {
+          App.startTimer([activity]);
+        }
+      });
+    });
+
+
+    document.getElementById('add-custom-tile')?.addEventListener('click', () => {
+      document.getElementById('custom-modal').classList.add('active');
+    });
+
+    // Routine tiles — launch playlist
+    el.querySelectorAll('.routine-tile').forEach(tile => {
+      tile.addEventListener('click', () => {
+        const playlist = buildRoutine(tile.dataset.rid);
+        if (playlist.length) App.startTimer(playlist);
+      });
+    });
+
+    // Playlist mode toggle
+    const plBtn = document.getElementById('playlist-mode-btn');
+    if (plBtn) plBtn.addEventListener('click', () => {
+      this.playlistMode = !this.playlistMode;
+      this.render();
+    });
+    // Playlist controls
+    const plPlay = document.getElementById('pl-go');
+    if (plPlay) plPlay.addEventListener('click', () => {
+      if (this.queue.length) {
+        App.startTimer([...this.queue]);
+        this.queue = [];
+        this.playlistMode = false;
+      }
+    });
+    const plClear = document.getElementById('pl-clear');
+    if (plClear) plClear.addEventListener('click', () => {
+      this.queue = [];
+      this.render();
+    });
+    el.querySelectorAll('.q-remove').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.queue.splice(parseInt(btn.dataset.qi), 1);
+        this.render();
+      });
+    });
+  }
+};
+
+/* ═══════════════════════════════════════════
+   WORKOUT DECK VIEW
+   ═══════════════════════════════════════════ */
+const WorkoutView = {
+  render() {
+    const el = document.getElementById('view-workout');
+    const ids = Object.keys(WORKOUT_PROTOCOLS);
+    let html = '<div class="deck-grid">';
+    for (const id of ids) {
+      const w = WORKOUT_PROTOCOLS[id];
+      html += `<div class="tile workout-tile" data-wid="${id}">
+        <div style="font-size:36px">${w.emoji}</div>
+        <div class="label">${w.name}</div>
+      </div>`;
+    }
+    // Custom
+    html += `<div class="tile add-tile" id="add-custom-workout">
+      <div style="font-size:36px;opacity:0.4">➕</div>
+      <div class="label" style="color:#555">Custom</div>
+    </div>`;
+    // Pad to 15
+    const total = ids.length + 1;
+    for (let i = total; i < 15; i++) {
+      html += '<div class="tile" style="background:#0a0a0a;cursor:default"></div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+
+    el.querySelectorAll('.workout-tile').forEach(tile => {
+      tile.addEventListener('click', () => {
+        const activity = createWorkoutActivity(tile.dataset.wid);
+        if (activity) App.startTimer([activity]);
+      });
+    });
+    const cBtn = document.getElementById('add-custom-workout');
+    if (cBtn) cBtn.addEventListener('click', () => {
+      document.getElementById('custom-modal').classList.add('active');
+    });
+  }
+};
+
+/* ═══════════════════════════════════════════
+   7. PLAYLIST BUILDER
+   ═══════════════════════════════════════════ */
+const PlaylistBuilder = {
+  items: [],
+  dragIdx: -1,
+
+  render() {
+    const el = document.getElementById('view-playlist');
+    let html = '<div class="playlist-section">';
+    html += '<h2>Available Protocols</h2>';
+    html += '<div class="available-tiles">';
+    for (const id of Object.keys(PROTOCOLS)) {
+      const p = PROTOCOLS[id];
+      html += `<div class="mini-tile" data-id="${id}" data-category="${p.category}" draggable="true"
+                style="--cat-color:var(--${p.category})">
+        <span class="dot"></span>${p.name}
+      </div>`;
+    }
+    html += '</div>';
+
+    html += '<h2>Your Routine</h2>';
+    html += '<div class="playlist-lane" id="playlist-lane">';
+    if (!this.items.length) {
+      html += '<div class="empty-msg">Drag protocols here or click to add</div>';
+    } else {
+      this.items.forEach((item, i) => {
+        html += `<div class="playlist-item" data-idx="${i}" data-category="${item.category}" draggable="true"
+                  style="--cat-color:var(--${item.category})">
+          ${item.name} <span style="color:var(--text-dim)">${formatTime(totalDuration(item))}</span>
+          <button class="remove-btn" data-ridx="${i}">&times;</button>
+        </div>`;
+      });
+    }
+    html += '</div>';
+
+    const total = this.items.reduce((s, a) => s + totalDuration(a), 0);
+    html += `<div class="playlist-meta">${this.items.length} activities &middot; ${formatTime(total)} total</div>`;
+
+    html += '<div class="playlist-controls">';
+    html += `<button class="btn-primary" id="pl-play" ${!this.items.length ? 'disabled style="opacity:.4"' : ''}>Play All</button>`;
+    html += '<input class="save-input" id="pl-save-name" placeholder="Routine name...">';
+    html += '<button class="btn-secondary" id="pl-save">Save</button>';
+    html += '<button class="btn-danger" id="pl-clear">Clear</button>';
+    html += '</div>';
+
+    const routines = Storage.getRoutines();
+    const names = Object.keys(routines);
+    if (names.length) {
+      html += '<div class="saved-routines"><h3>Saved Routines</h3><div class="routine-list">';
+      for (const n of names) {
+        html += `<div class="routine-chip" data-rname="${n}">${n} <span class="del" data-dname="${n}">&times;</span></div>`;
+      }
+      html += '</div></div>';
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+    this._bindEvents(el);
+  },
+
+  _bindEvents(el) {
+    el.querySelectorAll('.mini-tile').forEach(t => {
+      t.addEventListener('click', () => {
+        this.items.push(createActivity(t.dataset.id));
+        this.render();
+      });
+      t.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', t.dataset.id);
+        e.dataTransfer.effectAllowed = 'copy';
+      });
+    });
+
+    const lane = document.getElementById('playlist-lane');
+
+    lane.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      lane.classList.add('drag-over');
+    });
+    lane.addEventListener('dragleave', () => lane.classList.remove('drag-over'));
+    lane.addEventListener('drop', e => {
+      e.preventDefault();
+      lane.classList.remove('drag-over');
+      const protoId = e.dataTransfer.getData('text/plain');
+      const draggedIdx = e.dataTransfer.getData('application/x-idx');
+      if (draggedIdx !== '') {
+        const from = parseInt(draggedIdx);
+        const items = [...this.items];
+        const laneItems = lane.querySelectorAll('.playlist-item');
+        let insertIdx = items.length;
+        for (const li of laneItems) {
+          const rect = li.getBoundingClientRect();
+          if (e.clientX < rect.left + rect.width / 2) {
+            insertIdx = parseInt(li.dataset.idx);
+            break;
+          }
+        }
+        const [removed] = items.splice(from, 1);
+        const adjIdx = insertIdx > from ? insertIdx - 1 : insertIdx;
+        items.splice(adjIdx, 0, removed);
+        this.items = items;
+      } else if (PROTOCOLS[protoId]) {
+        this.items.push(createActivity(protoId));
+      }
+      this.render();
+    });
+
+    el.querySelectorAll('.playlist-item').forEach(pi => {
+      pi.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('application/x-idx', pi.dataset.idx);
+        e.dataTransfer.setData('text/plain', '');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+    });
+
+    el.querySelectorAll('.remove-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        this.items.splice(parseInt(btn.dataset.ridx), 1);
+        this.render();
+      });
+    });
+
+    document.getElementById('pl-play').addEventListener('click', () => {
+      if (this.items.length) App.startTimer([...this.items]);
+    });
+    document.getElementById('pl-save').addEventListener('click', () => {
+      const name = document.getElementById('pl-save-name').value.trim();
+      if (name && this.items.length) {
+        Storage.saveRoutine(name, this.items);
+        this.render();
+      }
+    });
+    document.getElementById('pl-clear').addEventListener('click', () => {
+      this.items = [];
+      this.render();
+    });
+
+    el.querySelectorAll('.routine-chip').forEach(chip => {
+      chip.addEventListener('click', e => {
+        if (e.target.classList.contains('del')) return;
+        const items = Storage.loadRoutine(chip.dataset.rname);
+        if (items) {
+          this.items = items;
+          this.render();
+        }
+      });
+    });
+    el.querySelectorAll('.routine-chip .del').forEach(d => {
+      d.addEventListener('click', e => {
+        e.stopPropagation();
+        Storage.deleteRoutine(d.dataset.dname);
+        this.render();
+      });
+    });
+  }
+};
+
+/* ═══════════════════════════════════════════
+   8. TIMER ENGINE
+   ═══════════════════════════════════════════ */
+const TimerEngine = {
+  state: 'IDLE',
+  queue: [],
+  queueIdx: 0,
+  activity: null,
+  phaseIdx: 0,
+  cycleIdx: 0,
+  elapsed: 0,
+  phaseDuration: 0,
+  lastTick: 0,
+  rafId: null,
+  manualWorkPhase: false,
+  workElapsed: 0,
+  _lastCountdown: -1,
+
+  start(queue) {
+    AudioEngine.init();
+    this.queue = queue;
+    this.queueIdx = 0;
+    this._startActivity(0);
+  },
+
+  _startActivity(idx) {
+    if (idx >= this.queue.length) {
+      this.state = 'COMPLETE';
+      AudioEngine.completionChime();
+      if (window.electronAPI) window.electronAPI.stopTray();
+      TimerView.render();
+      return;
+    }
+    this.queueIdx = idx;
+    this.activity = this.queue[idx];
+    this.phaseIdx = 0;
+    this.cycleIdx = 0;
+    this.elapsed = 0;
+    this._lastCountdown = -1;
+    this.manualWorkPhase = !!(this.activity.manualEnd && this.activity.phases[0]?.name === 'WORK');
+    this.workElapsed = 0;
+    this.phaseDuration = this.manualWorkPhase ? Infinity : this.activity.phases[0].duration;
+    this.state = 'RUNNING';
+    this._trayFrame = 0;
+    this.lastTick = performance.now();
+    AudioEngine.phaseTransition(this.activity.category);
+    TimerView.render();
+    this._tick();
+  },
+
+  _tick() {
+    if (this.state !== 'RUNNING') return;
+    const now = performance.now();
+    let delta = (now - this.lastTick) / 1000;
+    if (delta > 2) delta = 0.05;
+    this.lastTick = now;
+    this.elapsed += delta;
+
+    if (this.manualWorkPhase) {
+      this.workElapsed += delta;
+    }
+
+    if (!this.manualWorkPhase && this.phaseDuration !== Infinity) {
+      const remaining = this.phaseDuration - this.elapsed;
+      for (const n of [4, 3, 2, 1]) {
+        if (remaining <= n && remaining > n - 0.1 && this._lastCountdown !== n) {
+          this._lastCountdown = n;
+          AudioEngine.countdownBeep(n);
+        }
+      }
+    }
+
+    if (!this.manualWorkPhase && this.elapsed >= this.phaseDuration) {
+      this._nextPhase();
+      return;
+    }
+
+    TimerView.update(delta);
+    // Update menu bar tray
+    if (window.electronAPI && this._trayFrame++ % 30 === 0) {
+      const a = this.activity;
+      const phaseRemaining = Math.max(0, this.phaseDuration - this.elapsed);
+      let totalRemaining;
+      if (a.cycles != null && isFinite(a.cycles)) {
+        // Finite activity — show total remaining
+        totalRemaining = phaseRemaining;
+        for (let i = this.phaseIdx + 1; i < a.phases.length; i++) {
+          totalRemaining += a.phases[i].duration;
+        }
+        totalRemaining += Math.max(0, a.cycles - this.cycleIdx - 1) * a.cycleDuration;
+      } else {
+        // Infinite loops — show cycle remaining
+        totalRemaining = phaseRemaining;
+        for (let i = this.phaseIdx + 1; i < a.phases.length; i++) {
+          totalRemaining += a.phases[i].duration;
+        }
+      }
+      window.electronAPI.updateTray({
+        phase: a.phases[this.phaseIdx]?.name || '',
+        timeLeft: totalRemaining,
+        activityName: a.name || '',
+      });
+    }
+    this.rafId = requestAnimationFrame(() => this._tick());
+  },
+
+  _nextPhase() {
+    this.phaseIdx++;
+    this._lastCountdown = -1;
+    if (this.phaseIdx >= this.activity.phases.length) {
+      this.cycleIdx++;
+      if (this.cycleIdx >= this.activity.cycles) {
+        this._logSession();
+        AudioEngine.completionChime();
+        this._crossfadeTo(this.queueIdx + 1);
+        return;
+      }
+      this.phaseIdx = 0;
+      this.manualWorkPhase = !!(this.activity.manualEnd && this.activity.phases[0]?.name === 'WORK');
+      this.workElapsed = 0;
+    } else {
+      this.manualWorkPhase = false;
+    }
+    this.elapsed = 0;
+    this.phaseDuration = this.manualWorkPhase ? Infinity : this.activity.phases[this.phaseIdx].duration;
+    AudioEngine.phaseTransition(this.activity.category);
+    // Don't re-render — just let the next tick update the overlay text
+    this.lastTick = performance.now();
+    this.rafId = requestAnimationFrame(() => this._tick());
+  },
+
+  endSet() {
+    if (this.manualWorkPhase) {
+      this.manualWorkPhase = false;
+      this.elapsed = 0;
+      this._lastCountdown = -1;
+      this.phaseIdx++;
+      if (this.phaseIdx >= this.activity.phases.length) {
+        this.cycleIdx++;
+        if (this.cycleIdx >= this.activity.cycles) {
+          this._logSession();
+          AudioEngine.completionChime();
+          this._crossfadeTo(this.queueIdx + 1);
+          return;
+        }
+        this.phaseIdx = 0;
+        this.manualWorkPhase = !!(this.activity.manualEnd && this.activity.phases[0]?.name === 'WORK');
+        this.workElapsed = 0;
+      }
+      this.phaseDuration = this.activity.phases[this.phaseIdx].duration;
+      AudioEngine.phaseTransition(this.activity.category);
+      this.lastTick = performance.now();
+      this.rafId = requestAnimationFrame(() => this._tick());
+    }
+  },
+
+  togglePause() {
+    if (this.state === 'RUNNING') {
+      this.state = 'PAUSED';
+      cancelAnimationFrame(this.rafId);
+      const pb = document.getElementById('btn-pause');
+      if (pb) pb.textContent = 'Resume';
+    } else if (this.state === 'PAUSED') {
+      this.state = 'RUNNING';
+      this.lastTick = performance.now();
+      const pb = document.getElementById('btn-pause');
+      if (pb) pb.textContent = 'Pause';
+      this._tick();
+    }
+  },
+
+  skip() {
+    if (this.state === 'RUNNING' || this.state === 'PAUSED') {
+      this.state = 'RUNNING';
+      this.lastTick = performance.now();
+      this._nextPhase();
+    }
+  },
+
+  stop() {
+    this.state = 'IDLE';
+    cancelAnimationFrame(this.rafId);
+    if (window.electronAPI) window.electronAPI.stopTray();
+    App.switchView('deck');
+  },
+
+  nextActivity() {
+    if (this.queue.length <= 1) return;
+    cancelAnimationFrame(this.rafId);
+    this._logSession();
+    this._crossfadeTo(this.queueIdx + 1 < this.queue.length ? this.queueIdx + 1 : 0);
+  },
+
+  prevActivity() {
+    if (this.queue.length <= 1) return;
+    cancelAnimationFrame(this.rafId);
+    this._crossfadeTo(this.queueIdx - 1 >= 0 ? this.queueIdx - 1 : this.queue.length - 1);
+  },
+
+  _crossfadeTo(idx) {
+    const fade = document.getElementById('crossfade');
+    fade.classList.add('fade-in');
+    setTimeout(() => {
+      this._startActivity(idx);
+      setTimeout(() => fade.classList.remove('fade-in'), 100);
+    }, 800);
+  },
+
+  _logSession() {
+    const now = new Date();
+    Storage.addHistory({
+      name: this.activity.name,
+      time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      duration: formatTime(totalDuration(this.activity)),
+      date: now.toLocaleDateString()
+    });
+  },
+
+  getBreathingCue() {
+    if (!this.activity?.breathingOverlay) return null;
+    const breathCycle = 8;
+    const mod = this.elapsed % breathCycle;
+    if (mod < 4) return { text: 'BREATHE IN', progress: mod / 4 };
+    return { text: 'BREATHE OUT', progress: (mod - 4) / 4 };
+  }
+};
+
+/* ═══════════════════════════════════════════
+   9. TIMER VIEW — with retro animation support
+   ═══════════════════════════════════════════ */
+const TimerView = {
+  canvas: null,
+  ctx: null,
+  retroCanvas: null,
+  displayCanvas: null,
+  isRetro: false,
+  _activeAnim: null,
+  scaleFactor: 3,
+
+  render() {
+    const el = document.getElementById('view-timer');
+    const engine = TimerEngine;
+
+    if (engine.state === 'IDLE') {
+      el.innerHTML = '<div class="timer-container"><p style="color:var(--text-dim)">Select a protocol from the Deck or play a Playlist to begin.</p></div>';
+      return;
+    }
+
+    if (engine.state === 'COMPLETE') {
+      el.innerHTML = `<div class="timer-container">
+        <div class="timer-digits" style="color:var(--breathing)">DONE</div>
+        <p style="color:var(--text-dim);margin-top:8px">All activities complete!</p>
+        <button class="btn-primary" onclick="(${() => App.switchView('deck')})()">Back to Deck</button>
+      </div>`;
+      DeckView.render();
+      return;
+    }
+
+    const a = engine.activity;
+    const phase = a.phases[engine.phaseIdx];
+    const glowClass = 'glow-' + a.category;
+    this.isRetro = !!a.animation;
+
+    let nextInfo = '';
+
+    const queueTotal = engine.queue.length;
+    const queuePos = engine.queueIdx + 1;
+
+    let html = `<div class="timer-container">
+      ${queueTotal > 1 ? `<div style="font-size:11px;color:var(--text-dim);letter-spacing:1px">${queuePos} / ${queueTotal}</div>` : ''}
+      <div class="timer-activity-name">${a.name}</div>
+      ${a.cue ? `<div style="font-size:13px;color:#8888aa;text-align:center;max-width:500px;font-style:italic;line-height:1.5">"${a.cue}"</div>` : ''}`;
+
+    if (this.isRetro) {
+      // Mode switcher — context-aware
+      const isWorkout = a.animation === 'workout';
+      const breathModes = [
+        { id: 'elevator', label: 'Elevator', anim: 'goat' },
+        { id: 'goat_night', label: 'Goat', anim: 'goat_night' },
+        { id: 'train', label: 'Train', anim: 'train' },
+        { id: 'dog', label: 'Dog', anim: 'dog' },
+        { id: 'skyline', label: 'Skyline', anim: 'skyline' },
+        { id: 'soccer', label: 'Soccer', anim: 'sidescroll' },
+      ];
+      const workoutModes = [
+        { id: 'workout', label: 'Runner', anim: 'workout' },
+      ];
+      const modes = isWorkout ? workoutModes : breathModes;
+      if (modes.length > 1) {
+        html += '<div style="display:flex;gap:6px;margin-bottom:8px;justify-content:center">';
+        for (const m of modes) {
+          const isActive = (this._activeAnim || a.animation) === m.anim;
+          html += `<button class="anim-switch" data-anim="${m.anim}" style="padding:4px 12px;border-radius:6px;border:1px solid ${isActive ? '#00d4aa' : '#ffffff15'};background:${isActive ? '#00d4aa20' : '#ffffff08'};color:${isActive ? '#00d4aa' : '#8888aa'};font-size:11px;font-weight:600;cursor:pointer;transition:all .15s">${m.label}</button>`;
+        }
+        html += '</div>';
+      }
+
+      // Retro pixel-art canvas
+      html += `<div class="retro-wrap" id="retro-wrap">
+        <canvas id="retro-display"></canvas>
+        <div class="retro-overlay">
+          <div>
+            <div class="ro-time" id="ro-time">--:--</div>
+            <div class="ro-cycle" id="ro-cycle">${a.cycles != null && a.cycles !== Infinity ? `Cycle ${engine.cycleIdx + 1} / ${a.cycles}` : ''}</div>
+          </div>
+          <div class="ro-phase ${glowClass}" id="ro-phase">${phase.name}</div>
+        </div>
+      </div>`;
+    } else {
+      // Standard circular ring
+      html += `<div class="timer-canvas-wrap">
+        <canvas id="timer-canvas" width="560" height="560"></canvas>
+        <div class="timer-center">
+          <div class="timer-digits" id="timer-digits">--:--</div>
+          <div class="timer-phase ${glowClass}" id="timer-phase">${phase.name}</div>
+          <div class="timer-set-info">${a.cycles != null && a.cycles !== Infinity ? `Cycle ${engine.cycleIdx + 1} / ${a.cycles}` : ''}</div>
+          <div class="timer-breathing-cue" id="timer-breath-cue"></div>
+        </div>
+      </div>`;
+    }
+
+    html += `${nextInfo ? `<div class="timer-next">${nextInfo}</div>` : ''}`;
+
+    if (engine.manualWorkPhase) {
+      html += `<button class="btn-end-set" id="btn-end-set">END SET</button>`;
+    }
+
+    const isPlaylist = engine.queue.length > 1;
+    html += `<div class="timer-controls">
+        ${isPlaylist ? '<button class="btn-back" id="btn-back">&larr; Back</button>' : ''}
+        <button class="btn-pause" id="btn-pause">${engine.state === 'PAUSED' ? 'Resume' : 'Pause'}</button>
+        <button class="btn-skip" id="btn-skip">Skip Phase</button>
+        ${isPlaylist ? '<button class="btn-next" id="btn-next">Next &rarr;</button>' : ''}
+        <button class="btn-stop" id="btn-stop">Stop</button>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;justify-content:center">
+        <button class="btn-fullscreen" id="btn-fs">Fullscreen</button>
+        ${window.electronAPI ? '<button class="btn-tray" id="btn-tray" style="background:#0a0a1a;color:#60a5fa;border:1px solid #1e3a5f;border-radius:6px;padding:6px 16px;cursor:pointer;font-size:12px">↗ Menu Bar</button>' : ''}
+      </div>
+    </div>`;
+
+    el.innerHTML = html;
+
+    if (this.isRetro) {
+      // Set up retro canvas
+      this.displayCanvas = document.getElementById('retro-display');
+      // Create hidden game canvas at native resolution
+      this.retroCanvas = document.createElement('canvas');
+      this.retroCanvas.width = 384;
+      this.retroCanvas.height = 216;
+      RetroEngine.init(this.retroCanvas);
+      this._sizeRetroDisplay();
+    } else {
+      this.canvas = document.getElementById('timer-canvas');
+      this.ctx = this.canvas.getContext('2d');
+    }
+
+    // Animation mode switcher
+    el.querySelectorAll('.anim-switch').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this._activeAnim = btn.dataset.anim;
+        this.render(); // re-render to update active state
+      });
+    });
+
+    document.getElementById('btn-pause').addEventListener('click', () => TimerEngine.togglePause());
+    document.getElementById('btn-skip').addEventListener('click', () => TimerEngine.skip());
+    document.getElementById('btn-stop').addEventListener('click', () => TimerEngine.stop());
+    const trayBtn = document.getElementById('btn-tray');
+    if (trayBtn) trayBtn.addEventListener('click', () => {
+      if (window.electronAPI) window.electronAPI.minimizeToTray();
+    });
+    const endBtn = document.getElementById('btn-end-set');
+    if (endBtn) endBtn.addEventListener('click', () => TimerEngine.endSet());
+    const backBtn = document.getElementById('btn-back');
+    if (backBtn) backBtn.addEventListener('click', () => TimerEngine.prevActivity());
+    const nextBtn = document.getElementById('btn-next');
+    if (nextBtn) nextBtn.addEventListener('click', () => TimerEngine.nextActivity());
+    document.getElementById('btn-fs').addEventListener('click', () => {
+      const el = document.documentElement;
+      if (!document.fullscreenElement) {
+        el.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen();
+      }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      setTimeout(() => this._sizeRetroDisplay(), 100);
+    });
+
+    this.update(0);
+  },
+
+  _sizeRetroDisplay() {
+    if (!this.displayCanvas) return;
+    // Scale to fit ~700px wide max
+    const maxW = window.innerWidth - 40;
+    const maxH = window.innerHeight - 200;
+    const scaleX = Math.floor(maxW / 384);
+    const scaleY = Math.floor(maxH / 216);
+    this.scaleFactor = Math.max(2, Math.min(scaleX, scaleY, 10));
+    const dw = 384 * this.scaleFactor;
+    const dh = 216 * this.scaleFactor;
+    this.displayCanvas.width = dw;
+    this.displayCanvas.height = dh;
+    this.displayCanvas.style.width = dw + 'px';
+    this.displayCanvas.style.height = dh + 'px';
+  },
+
+  update(dt) {
+    const engine = TimerEngine;
+    if (engine.state !== 'RUNNING' && engine.state !== 'PAUSED') return;
+
+    const a = engine.activity;
+
+    if (this.isRetro && this.retroCanvas && this.displayCanvas) {
+      // Update retro breath state
+      RetroEngine.updateBreathState(dt);
+
+      // Clear and draw the animation
+      RetroEngine.ctx.clearRect(0, 0, 384, 216);
+
+      const animId = this._activeAnim || a.animation;
+      if (animId === 'goat') GoatAnim.draw(dt);
+      else if (animId === 'goat_night') GoatNightAnim.draw(dt);
+      else if (animId === 'train') TrainAnim.draw(dt);
+      else if (animId === 'dog') DogAnim.draw(dt);
+      else if (animId === 'skyline') SkylineAnim.draw(dt);
+      else if (animId === 'sidescroll') SidescrollAnim.draw(dt);
+      else if (animId === 'workout') WorkoutAnim.draw(dt);
+
+      // Blit to display with pixelated scaling
+      const dctx = this.displayCanvas.getContext('2d');
+      dctx.imageSmoothingEnabled = false;
+      dctx.clearRect(0, 0, this.displayCanvas.width, this.displayCanvas.height);
+      dctx.drawImage(this.retroCanvas, 0, 0, this.displayCanvas.width, this.displayCanvas.height);
+
+      // Subtle scanlines
+      dctx.fillStyle = 'rgba(0,0,0,0.04)';
+      for (let y = 0; y < this.displayCanvas.height; y += this.scaleFactor) {
+        dctx.fillRect(0, y, this.displayCanvas.width, 1);
+      }
+
+      // Update overlay text
+      const timeEl = document.getElementById('ro-time');
+      const phaseEl = document.getElementById('ro-phase');
+      const cycleEl = document.getElementById('ro-cycle');
+      if (timeEl) {
+        if (engine.manualWorkPhase) {
+          timeEl.textContent = formatTime(engine.workElapsed);
+        } else {
+          timeEl.textContent = formatTime(Math.max(0, engine.phaseDuration - engine.elapsed));
+        }
+      }
+      if (phaseEl) {
+        const pName = a.phases[engine.phaseIdx]?.name || '';
+        phaseEl.textContent = pName;
+        const pColors = { 'INHALE': '#78d878', 'EXHALE': '#d8a878', 'HOLD': '#d8d878', 'SIP!': '#f0e068', 'WORK': '#ff6644' };
+        phaseEl.style.color = pColors[pName] || '#f8f8f0';
+      }
+      if (cycleEl) cycleEl.textContent = `${a.cycles != null && a.cycles !== Infinity ? `Cycle ${engine.cycleIdx + 1} / ${a.cycles}` : ''}`;
+
+    } else if (this.canvas && this.ctx) {
+      // Standard ring timer
+      const digitsEl = document.getElementById('timer-digits');
+      if (digitsEl) {
+        if (engine.manualWorkPhase) {
+          digitsEl.textContent = formatTime(engine.workElapsed);
+        } else {
+          digitsEl.textContent = formatTime(Math.max(0, engine.phaseDuration - engine.elapsed));
+        }
+      }
+
+      const cueEl = document.getElementById('timer-breath-cue');
+      if (cueEl) {
+        const cue = engine.getBreathingCue();
+        if (cue) {
+          cueEl.textContent = cue.text;
+          cueEl.style.color = cue.text.includes('IN') ? 'var(--breathing)' : 'var(--stretching)';
+        }
+      }
+
+      const ctx = this.ctx;
+      const w = this.canvas.width;
+      const h = this.canvas.height;
+      const cx = w / 2, cy = h / 2, r = w / 2 - 20;
+
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ffffff10';
+      ctx.lineWidth = 12;
+      ctx.stroke();
+
+      let progress;
+      if (engine.manualWorkPhase) {
+        progress = (Math.sin(engine.workElapsed * 2) + 1) / 2;
+      } else {
+        progress = Math.min(1, engine.elapsed / engine.phaseDuration);
+      }
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + Math.PI * 2 * progress;
+      const catColors = { breathing: '#00d4aa', workout: '#ff6b35', stretching: '#a855f7' };
+      const color = catColors[a.category] || '#00d4aa';
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, startAngle, endAngle);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 12;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, startAngle, endAngle);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 20;
+      ctx.globalAlpha = 0.15;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+};
+
+/* ═══════════════════════════════════════════
+   10. APP
+   ═══════════════════════════════════════════ */
+const App = {
+  currentView: 'deck',
+
+  init() {
+    document.querySelectorAll('nav button[data-view]').forEach(btn => {
+      btn.addEventListener('click', () => this.switchView(btn.dataset.view));
+    });
+
+    document.getElementById('cm-preset').addEventListener('change', (e) => {
+      const presets = {
+        seluyanov: { name: 'Seluyanov TUT', cat: 'workout', p1: 'WORK', d1: '40', p2: 'REST', d2: '300', cy: '3' },
+        emom: { name: 'EMOM', cat: 'workout', p1: 'GO', d1: '60', p2: '', d2: '0', cy: '10' },
+        stretch: { name: 'Timed Stretch', cat: 'stretching', p1: 'HOLD', d1: '30', p2: '', d2: '0', cy: '1' },
+      };
+      const p = presets[e.target.value];
+      if (p) {
+        document.getElementById('cm-name').value = p.name;
+        document.getElementById('cm-category').value = p.cat;
+        document.getElementById('cm-p1-name').value = p.p1;
+        document.getElementById('cm-p1-dur').value = p.d1;
+        document.getElementById('cm-p2-name').value = p.p2;
+        document.getElementById('cm-p2-dur').value = p.d2;
+        document.getElementById('cm-cycles').value = p.cy;
+      }
+    });
+
+    document.getElementById('cm-create').addEventListener('click', () => {
+      const activity = createCustomActivity({
+        name: document.getElementById('cm-name').value.trim() || 'Custom',
+        category: document.getElementById('cm-category').value,
+        p1Name: document.getElementById('cm-p1-name').value.trim() || 'WORK',
+        p1Dur: parseFloat(document.getElementById('cm-p1-dur').value) || 30,
+        p2Name: document.getElementById('cm-p2-name').value.trim(),
+        p2Dur: parseFloat(document.getElementById('cm-p2-dur').value) || 0,
+        cycles: parseInt(document.getElementById('cm-cycles').value) || 1
+      });
+      document.getElementById('custom-modal').classList.remove('active');
+      this.startTimer([activity]);
+    });
+
+    const lastRoutine = Storage.getLastRoutine();
+    if (lastRoutine) {
+      const items = Storage.loadRoutine(lastRoutine);
+      if (items) PlaylistBuilder.items = items;
+    }
+
+    DeckView.render();
+    PlaylistBuilder.render();
+    TimerView.render();
+
+    // URL parameter API — enables Stream Deck, OBS browser source, deep links
+    this._handleUrlParams();
+
+    // postMessage API — enables Electron IPC and iframe embedding
+    window.addEventListener('message', (e) => {
+      const d = e.data;
+      if (!d || !d.action) return;
+      if (d.action === 'start' && d.protocol) {
+        const rPlaylist = buildRoutine(d.protocol);
+        if (rPlaylist.length) {
+          this.startTimer(rPlaylist);
+        } else {
+          const activity = createActivity(d.protocol, { cycles: d.cycles });
+          if (activity) this.startTimer([activity]);
+        }
+      }
+      if (d.action === 'pause') TimerEngine.togglePause();
+      if (d.action === 'skip') TimerEngine.skip();
+      if (d.action === 'stop') TimerEngine.stop();
+      if (d.action === 'next') TimerEngine.nextActivity();
+      if (d.action === 'prev') TimerEngine.prevActivity();
+    });
+  },
+
+  _handleUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    const minimal = params.get('minimal') === '1';
+    const startProto = params.get('start');
+    const cycles = params.get('cycles');
+    const doFullscreen = params.get('fullscreen') === '1';
+
+    // Minimal mode — hide nav for OBS browser source
+    if (minimal) {
+      document.querySelector('nav').style.display = 'none';
+    }
+
+    // Auto-start a protocol or Vesper
+    if (startProto) {
+      // Need a user gesture for audio + fullscreen — show a start interstitial
+      const overlay = document.createElement('div');
+      overlay.id = 'start-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:#1a1a2e;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;';
+      const routineMatch = ROUTINE_LIBRARY.find(r => r.id === startProto);
+      const label = routineMatch ? routineMatch.name : (PROTOCOLS[startProto]?.name || startProto);
+      overlay.innerHTML = `
+        <div style="font-size:14px;color:#8888aa;letter-spacing:3px;text-transform:uppercase;margin-bottom:12px">DECKTIMER</div>
+        <div style="font-size:36px;font-weight:700;color:#e0e0e0;margin-bottom:24px">${label}</div>
+        <div style="font-size:16px;color:#00d4aa;font-weight:600;animation:pulse 2s ease-in-out infinite">TAP TO START</div>
+        <style>@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}</style>
+      `;
+      document.body.appendChild(overlay);
+
+      overlay.addEventListener('click', () => {
+        overlay.remove();
+        const routinePlaylist = buildRoutine(startProto);
+        if (routinePlaylist.length) {
+          this.startTimer(routinePlaylist);
+        } else {
+          const overrides = {};
+          if (cycles) overrides.cycles = parseInt(cycles);
+          const activity = createActivity(startProto, overrides);
+          if (activity) this.startTimer([activity]);
+        }
+        if (doFullscreen) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+      }, { once: true });
+    }
+  },
+
+  switchView(name) {
+    this.currentView = name;
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('nav button[data-view]').forEach(b => b.classList.remove('active'));
+    document.getElementById('view-' + name).classList.add('active');
+    const navBtn = document.querySelector(`nav button[data-view="${name}"]`);
+    if (navBtn) navBtn.classList.add('active');
+
+    if (name === 'deck') DeckView.render();
+    if (name === 'workout') WorkoutView.render();
+    if (name === 'playlist') PlaylistBuilder.render();
+  },
+
+  startTimer(queue) {
+    TimerView._activeAnim = null; // reset to protocol default
+    this.switchView('timer');
+    TimerEngine.start(queue);
+  }
+};
+
+document.addEventListener('DOMContentLoaded', () => App.init());
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && TimerEngine.state !== 'IDLE') {
+    e.preventDefault();
+    TimerEngine.togglePause();
+  }
+});
+
+})();
+</script>
+</body>
+</html>
